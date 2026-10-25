@@ -15,10 +15,10 @@
 lookup <- list(
    Sex  = "Sex",
    Age  = "Age",
-   Race = "Race",
+   Race = "Race/ethnicity",
    Marital_status = "Marital status",
    IPR        = "IPR",
-   Education  = "Education",
+   Education  = "Education level",
    Systolic1  = "SBP: First measurment",
    Systolic2  = "SBP: Second measurment",
    Systolic3  = "SBP: Third measurment",
@@ -34,11 +34,11 @@ lookup <- list(
    SCr = "Serum Creatinine",
    ACR = "ACR",
    HbA1c     = "HbA1c",
-   Diabetes  = "Diabetes",
+   Diabetes  = "Diabetes status",
    Taking_BP_meds = "BP-lowering medications",
    SBP_avg = "Mean SBP",
    DBP_avg = "Mean DBP",
-   Pulse_avg = "Mean Pulse rate",
+   Pulse_avg = "Mean pulse rate",
    eGFR = "eGFR"
 )
 
