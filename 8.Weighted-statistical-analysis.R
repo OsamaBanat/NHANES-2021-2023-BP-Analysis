@@ -330,7 +330,8 @@ plot_categorical <- function(var) {
 }
 
 # Apply function
-plot_categorical(
-   c("Sex", "Insurance", "Taking_BP_meds", "Race", "Marital_status", "Education", "Diabetes")
+map(
+   c("Sex", "Insurance", "Taking_BP_meds", "Race", "Marital_status", "Education", "Diabetes"),
+   plot_categorical
 )
 
