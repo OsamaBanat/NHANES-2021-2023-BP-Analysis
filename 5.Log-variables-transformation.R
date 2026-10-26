@@ -77,8 +77,7 @@ Exploring_log <- function(vars) {
 }
 
 # Apply function
-map(
-   c("ACR_log", "eGFR_log"), 
-   Exploring_log
+Exploring_log(
+   c("ACR_log", "eGFR_log")
 )
 
