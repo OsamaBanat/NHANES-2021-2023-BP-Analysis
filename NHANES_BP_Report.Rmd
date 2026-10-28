@@ -3138,6 +3138,7 @@ For DBP, mean errors were also relatively small in most subgroups. The largest a
 The diagnostic plots showed several common features in the SBP and DBP models (see Figures 5 and 6). For both outcomes, residuals were generally centered around zero across much of the fitted-value range. However, the residual-versus-fitted and scale-location plots suggested that residual variance was not entirely constant. In particular, the scale-location plots showed increasing residual spread toward higher fitted values, suggesting less consistent prediction errors in this region.
 
 ```{r}
+#| echo: false
 
 SBP_Model$Diagnostic_plots +
    plot_annotation(
@@ -3146,6 +3147,7 @@ SBP_Model$Diagnostic_plots +
 ```
 
 ```{r}
+#| echo: false
 
 DBP_Model$Diagnostic_plots +
    plot_annotation(
@@ -3158,6 +3160,7 @@ The normal Q-Q plots showed reasonable alignment with the reference line near th
 Observed-versus-predicted plots suggested that the models tended to compress predicted values toward the middle of the observed distributions, refer to Figures 7 and 8. Consequently, the models had difficulty predicting individuals with unusually high or low BP values. This pattern was consistent with regression toward the mean.
 
 ```{r}
+#| echo: false
 
 SBP_Model$Prediction_plot +
    labs(
@@ -3166,6 +3169,7 @@ SBP_Model$Prediction_plot +
 ```
 
 ```{r}
+#| echo: false
 
 DBP_Model$Prediction_plot +
    labs(
@@ -3176,6 +3180,7 @@ DBP_Model$Prediction_plot +
 Examination of residual plots against continuous predictors suggested generally limited systematic residual patterns across the central ranges of most predictors. For SBP, see Figure 9, residual smooths were largely flat across age and log-transformed ACR, while some curvature or directional trends were apparent at higher values of BMI, waist circumference, HbA1c, and pulse rate. For DBP, a curved pattern was most apparent across age, with additional potential residual structure across BMI, log-transformed eGFR, and HbA1c (Figure 10). These patterns were less certain at the extremes of the predictor distributions, where observations were sparse, and confidence bands widened.
 
 ```{r}
+#| echo: false
 
 SBP_Model$Residual_plots +
       plot_annotation(
@@ -3188,6 +3193,7 @@ SBP_Model$Residual_plots +
 ```
 
 ```{r}
+#| echo: false
 
 DBP_Model$Residual_plots +
       plot_annotation(
