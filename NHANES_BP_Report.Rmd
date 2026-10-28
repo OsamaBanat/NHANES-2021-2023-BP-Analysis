@@ -1,0 +1,3338 @@
+---
+title: "Untitled"
+author: "Osama Banat"
+date: "2026-10-28"
+output: html_document
+---
+
+# Demographic, Lifestyle, Metabolic, and Renal Factors Associated with Blood Pressure in U.S. Adults: A Survey-Weighted Analysis and Predictive Modeling Study
+
+> **Background:** Blood pressure is an important modifiable determinant of cardiovascular risk, with substantial variation across demographic and clinical characteristics. This study examined the adjusted associations of demographic, socioeconomic, anthropometric, metabolic, and renal characteristics with systolic and diastolic blood pressure, while evaluating the ability of these characteristics to predict individual blood pressure values.
+>
+> **Methods:** This cross-sectional study used NHANES 2021–2023 data from US adults. Survey-weighted descriptive and multivariable linear regression analyses were conducted to assess associations with systolic and diastolic blood pressure. Separately, ordinary linear regression, ridge, lasso, and elastic net models were developed for prediction using an 80/20 training–test split and repeated 10-fold cross-validation. Predictive performance was evaluated using RMSE, MAE, and R², alongside subgroup and residual analyses.
+>
+> **Results:** Age and urinary albumin-to-creatinine ratio were positively associated with systolic blood pressure, whereas BMI and pulse rate were positively associated with diastolic blood pressure in the respective final models. Female sex was associated with lower blood pressure, while non-Hispanic Black adults had higher adjusted levels than non-Hispanic White adults. Predictive performance was modest, with test-set R² values of 0.212 for systolic and 0.177 for diastolic blood pressure. Regularization provided negligible improvement over ordinary linear regression, and prediction errors varied across subgroups.
+>
+> **Conclusion:** Demographic and clinical characteristics showed different adjusted associations with systolic and diastolic blood pressure, but their ability to predict individual blood pressure values was limited. These findings highlight the distinction between population-level associations and individual-level prediction and support further research using additional predictors, flexible modeling approaches, and external validation.
+
+## 1.0 Introduction
+
+Blood pressure (BP) is a major modifiable determinant of cardiovascular disease and premature mortality [1]. Despite advances in prevention and treatment, hypertension remains a substantial public-health concern in the United States. During August 2021–August 2023, an estimated 47.7% of US adults had hypertension, and only 20.7% of adults with hypertension had their BP controlled to below 130/80 mmHg [2]. Understanding the demographic, socioeconomic, anthropometric, metabolic, and renal characteristics associated with systolic blood pressure (SBP) and diastolic blood pressure (DBP) is therefore important for characterizing population-level differences in BP and identifying patterns that may inform further epidemiological research.
+
+BP is associated with multiple interrelated characteristics, including age, sex, adiposity, glycemic status, kidney health, and socioeconomic circumstances. However, these characteristics may be correlated with one another, complicating the interpretation of their individual associations with BP. For example, body mass index (BMI) and waist circumference (WC) represent related aspects of adiposity, whereas urinary albumin-to-creatinine ratio (ACR) and estimated glomerular filtration rate (eGFR) provide complementary information about kidney health. Moreover, associations may differ between SBP and DBP, making it important to examine these outcomes separately. Multivariable regression can estimate associations conditional on measured covariates, although findings from cross-sectional analyses cannot establish causal relationships.
+
+A related but distinct objective is to determine how accurately a combination of these characteristics can predict individual BP values. Association analyses and predictive modeling serve different purposes: a characteristic associated with BP at the population level does not necessarily provide substantial additional predictive information, and good predictive performance does not establish a causal relationship [3]. Comparing ordinary linear regression with regularized approaches may also help assess whether penalization improves prediction when candidate predictors are correlated [4].
+
+The National Health and Nutrition Examination Survey (NHANES) provides population-based data on demographic, socioeconomic, examination, and laboratory characteristics, with survey methods that support appropriately weighted analyses of the US population [5]. Using NHANES 2021–2023 data, this study had two objectives. First, to estimate the adjusted associations of demographic, socioeconomic, anthropometric, metabolic, and renal characteristics with SBP and DBP using survey-weighted multivariable linear regression. Second, to develop and internally evaluate models for predicting continuous SBP and DBP using ordinary linear regression, ridge regression, lasso regression, and elastic net regression. Predictive performance was compared using repeated cross-validation, with additional assessment of subgroup errors and residual patterns. By addressing association and prediction separately, the study sought to characterize population-level relationships with BP while evaluating the extent to which the selected characteristics could predict individual BP values.
+
+## 2.0 Methodology
+
+### 2.1 Study population
+
+This study utilized data from the NHANES, a nationally representative survey conducted by the Centers for Disease Control and Prevention to evaluate the health and nutritional status of the civilian, noninstitutionalized U.S. population. NHANES employs a complex, multistage probability sampling design and collects information through demographic interviews, dietary assessments, standardized questionnaires, physical examinations, and laboratory testing. Survey data are released in two-year cycles and are publicly available for research purposes [6].
+
+This analysis used data from the NHANES August 2021– August 2023 cycle. The included participants were adults aged 18 years or older who attended the Mobile Examination Center (MEC) and had at least one recorded SBP and DBP measurement. Female participants with a positive urine pregnancy test (n = 41) were excluded because pregnancy is associated with physiological changes that may influence BP and several study variables. The extended analytical sample was derived after applying these eligibility criteria and subsequent data cleaning procedures.
+
+NHANES protocols were approved by the National Center for Health Statistics (NCHS) Research Ethics Review Board, and written informed consent was obtained from all participants before data collection [7].
+
+### 2.2 Inclusion and exclusion criteria
+
+The study inclusion criteria included adults aged 18 years or older who had at least one measurement for their BP recorded during the MEC examination.
+
+The exclusion criteria included participants younger than 18 years old, those with incomplete covariates, and female participants with a positive urine pregnancy test.
+
+Figure 1: Flow diagram illustrating the dataset after applying exclusion criteria and removing missing data.
+
+```{r setup, include=FALSE}
+library(quarto)
+library(DiagrammeR)
+library(haven)
+library(tidyverse)
+library(survey)
+library(broom)
+library(gt)
+library(gtsummary)
+library(nortest)
+library(emmeans)
+library(jtools)
+library(car)
+library(tidymodels)
+library(patchwork)
+```
+
+```{r}
+#| echo: false
+
+grViz("
+digraph exclusion {
+
+  graph [
+    layout = dot, 
+    rankdir = TB
+    label = 'Figure 1: Flow diagram illustrating the dataset after applying exclusion criteria and removing missing data.',
+    labelloc = t,
+    fontsize = 18,
+    fontname = Helvetica
+    ]
+
+  node [
+    shape = box,
+    style = filled,
+    fillcolor = White,
+    color = Black,
+    fontname = Helvetica,
+    fontsize = 12,
+    margin = 0.2
+  ]
+
+  edge [
+    color = black,
+    arrowsize = 0.8
+  ]
+
+  A [label = 'NHANES 2021 – 2023\\n(n = 11933)']
+  B [label = 'Participants < 18 years\\n(n = 3780)']
+  C [label = 'n = 8153']
+  D [label = 'Positive results in urine pregnancy test\\n(n = 41)']
+  E [label = 'n = 8112']
+  F [label = 'Participants with no BP measurements\\n(n = 2028)']
+  G [label = 'n = 6084']
+  H [label = 'Missing covariates data: marital status (n = 265), education (n \\n= 263), IPR (n = 787), insurance (n = 12), BMI (n = 62), WC\\n(n = 201), HbA1c (n = 201), having diabetes (n = 1), ACR (n = \\n120), eGFR (n = 634), taking BP-lowering medications (n = 7).\\nAge, sex, race, and pulse rate have no missing data']
+  I [label = 'Final dataset\\n(n = 4384)']
+
+  A -> B
+  A -> C
+  C -> D
+  C -> E
+  E -> F
+  E -> G
+  G -> H
+  G -> I
+
+}
+")
+
+```
+
+### 2.3 BP measurements
+
+All BP measurements were taken in the MEC following a standardized protocol. Upper arm circumference was measured first to determine the appropriate cuff size. After participants rested quietly in a seated position for 5 minutes, three consecutive measurements of SBP, DBP, and pulse rate were recorded at 60-second intervals using an Omron HEM-907XL electronic upper-arm BP monitor. This device has been validated according to the standards of both the Association for the Advancement of Medical Instrumentation and the European Society of Hypertension International Protocol for individuals aged 13 years and older. BP measurements were performed on the right arm whenever possible. The left arm was used only when contraindications or participant-reported conditions prevented measurement on the right arm [8].
+
+For each participant, the mean values of available SBP, DBP, and pulse rate measurements were calculated and used in subsequent analyses.
+
+### 2.4 Covariates
+
+The analysis included a range of potential covariates from the survey that may influence BP or act as confounding factors: sex, age, race, income, education, marital status, insurance coverage, WC, BMI, pulse rate, presence of diabetes, glycohemoglobin level (HbA1C), serum creatinine (SCr), urine ACR, and use of BP-lowering medications.
+
+Race/ethnicity categories were classified according to NHANES demographic variables and include: Mexican American, Other Hispanic, Non-Hispanic White, Non-Hispanic Black, Non-Hispanic Asian, and Other Race. The income variable is represented by the Family Income-to-Poverty Ratio (IPR), which is the ratio of family income to the U.S. Department of Health and Human Services poverty guidelines, tailored to family size. Educational attainment is categorized as follows: less than 9th grade, 9-11th grade (including 12th grade without a diploma), high school graduate/GED or equivalent, some college or an associate's degree, and college graduate or higher. Marital status includes: married/living with a partner, widowed/divorced/ separated, and never married. It is important to note that NHANES has set top-coded values for age and IPR at 80 years and 5, respectively [9].
+
+Furthermore, eGFR was estimated using the 2021 Chronic Kidney Disease Epidemiology Collaboration creatinine equation without race adjustment to represent kidney function in the analysis [10].
+
+The BP-medication variable had substantial missingness because the corresponding questionnaire items were subject to the NHANES skip pattern; only participants who reported having been told by a health professional that they had high BP were asked whether they were taking antihypertensive medication [11]. Therefore, participants who reported that they had not been told they had high BP were classified as “Not diagnosed,” rather than being treated as missing for the BP-medication variable.
+
+Among these covariates, sex, race, education, marital status, insurance coverage, diabetes, and use of medications were categorical variables. The rest were continuous variables.
+
+### 2.5 Statistical analysis
+
+All analyses were performed using R version 4.5.3 (2026-03-11) within RStudio [12].
+
+All analyses were conducted using a complete-case design. Data quality checks were performed before analysis. Variable ranges and extreme observations were examined using summary statistics, histograms, and boxplots. Potential outliers were manually reviewed against the NHANES documentation and retained when they were considered biologically plausible values rather than data-entry errors. Highly skewed variables were considered for logarithmic transformation before being used in regression analyses.
+
+Baseline characteristics were summarized using weighted means and 95% confidence intervals (CIs) for continuous variables and weighted percentages and 95% CIs for categorical variables. Sex differences were assessed using survey-adjusted Wald tests for continuous variables and survey-weighted chi-square tests for categorical variables. NHANES examination weights (WTMEC2YR) were used for measured clinical and laboratory variables [9]. Survey-design degrees of freedom were used for confidence-interval estimation.
+
+### 2.6 Association analysis
+
+Associations between BP and candidate covariates were initially examined using survey-weighted analyses. For binary categorical variables, survey-weighted t-tests were used, whereas differences across non-binary categorical variables were assessed using survey-weighted ANOVA. Multiplicity-adjusted pairwise comparisons were performed following ANOVA, using Tukey-adjusted p-values. Continuous variables were evaluated using survey-weighted linear regression, with log transformations applied where appropriate. Survey-weighted Pearson correlations were used to explore relationships among continuous variables, and a correlation heat map was generated to visualize the direction and strength of relationships among continuous variables, including BP measurements. Statistical significance was set at p \< 0.05.
+
+Survey-weighted multivariable linear regression was used to evaluate the independent associations of demographic, socioeconomic, anthropometric, metabolic, renal, and treatment-related characteristics with SBP and DBP. A sequential modeling strategy was used. An initial demographic model included age, sex, race/ethnicity, marital status, education, IPR, and insurance status. Clinical characteristics were subsequently added to obtain the primary multivariable model, which included adiposity, renal function, and glycemic status, alongside the demographic and socioeconomic covariates.
+
+Alternative model specifications were evaluated to examine the sensitivity of the estimated associations to the representation of clinical characteristics. These models substituted BMI for WC, log-transformed eGFR for log-transformed ACR, and HbA1c with categorical diabetes status. These alternative specifications were compared using model diagnostics, including the maximum variance inflation factor (VIF) and model deviance, in addition to the stability, interpretability, and clinical plausibility of the estimated associations.
+
+Because the survey design provided 15 degrees of freedom, model complexity was constrained to support design-based inference. Race and education were represented using prespecified binary contrasts, reducing the number of estimated parameters and preserving adequate design degrees of freedom for survey-based inference. The resulting estimates were interpreted in relation to the specified reference categories.
+
+Antihypertensive medication use was excluded from the primary model because treatment status may reflect prior hypertension and related clinical factors, and adjustment for treatment could alter the associations being estimated. Furthermore, including this variable increased model complexity and left insufficient residual design degrees of freedom for reliable design-based inference in the specified model. Given the cross-sectional design, medication-related findings were interpreted cautiously.
+
+Pulse rate was also excluded in the initial primary specification because it was considered an additional cardiovascular characteristic rather than a core demographic, socioeconomic, anthropometric, metabolic, or renal covariate. Its inclusion was therefore evaluated separately to determine whether adjustment for pulse rate materially altered the estimated associations and model results.
+
+Regression coefficients (β), 95% CIs, and design-based p-values were reported. Given the cross-sectional nature of NHANES, the estimated coefficients were interpreted as adjusted independent associations rather than definitive causal effects.
+
+### 2.7 Prediction analysis
+
+A separate predictive analysis was conducted to evaluate the ability of the available demographic, anthropometric, metabolic, renal, and cardiovascular characteristics to predict individual BP values. Unlike the preceding association analysis, which incorporated the NHANES complex survey design and sampling weights, the predictive analysis was developed without survey weights because the objective was individual-level prediction rather than population inference. All prespecified candidate predictors were entered into the predictive modeling framework, without excluding variables on the basis of their statistical significance in the weighted association models.
+
+The data were randomly divided into an 80% training set and 20% held-out test set, with stratification by BP to maintain a similar distribution of the outcome across the two datasets. All model development and model selection procedures were conducted exclusively within the training data. The held-out test set was not used for model selection or hyperparameter tuning and was reserved for the final evaluation of predictive performance.
+
+Within the training set, model performance was assessed using repeated 10-fold cross-validation with five repeats. The primary model-selection criterion was the lowest cross-validated root mean squared error (RMSE), with mean absolute error (MAE) and coefficient of determination (R2) also recorded to provide complementary measures of predictive performance.
+
+Linear regression was used as the baseline predictive model. Regularized regression approaches, including LASSO regression (L1 penalty), ridge regression (L2 penalty), and elastic net regression (combined L1 and L2 penalties), were subsequently evaluated to improve prediction performance and address potential overfitting and multicollinearity among predictors. Hyperparameters for the penalized models were tuned using cross-validation within the training set, and the best-performing penalized specification was selected according to the minimum cross-validated RMSE.
+
+The predictive analysis was deliberately restricted to main-effect linear specifications. No interaction terms, quadratic terms, higher-order polynomial terms, or spline-based terms were incorporated into the candidate models. A log-transformed scale was used when appropriate. This approach allowed direct comparison of conventional linear and penalized linear models while avoiding additional model complexity.
+
+Predictor preprocessing was incorporated within the modeling workflow to prevent information leakage between cross-validation folds. Categorical predictors were converted into indicator variables, zero-variance predictors were removed, and numeric predictors were standardized before penalized regression. These preprocessing steps were estimated within the resampling framework rather than from the complete dataset.
+
+The model with the lowest RMSE value was selected for refitting using the training dataset and then evaluated once on the untouched test dataset. Predictive performance was quantified using RMSE, MAE, and R2. Prediction errors were additionally examined using observed-versus-predicted plots and residual diagnostics. Residuals were defined as observed minus predicted, such that positive residuals indicated underprediction and negative residuals indicated overprediction.
+
+Coefficients from the selected penalized model were extracted to describe the fitted predictive equation. Because these coefficients were obtained from a regularized prediction model, they were interpreted as predictive model parameters rather than inferential measures of independent association; therefore, statistical significance testing using conventional standard errors, confidence intervals, and p-values was not performed for these coefficients.
+
+Finally, to assess whether predictive performance differed across clinically and demographically relevant populations, test-set performance was additionally evaluated within subgroups defined by sex, race/ethnicity, BP-lowering medication status, and diabetes status. For each subgroup, RMSE, MAE, mean prediction error, and R2 were calculated. Residuals were also examined against continuous predictors – age, BMI, WC, ACR, eGFR, HbA1c, and pulse rate - to identify systematic patterns in prediction error.
+
+## 3.0 Results
+
+### 3.1 Demographics and Clinical Characteristics
+
+Weighted percentages were calculated among participants with available data for each variable. The survey-weighted sample was approximately evenly distributed by sex, with males comprising 49.3% (95% CI: 47.8–50.7) and females 50.7% (95% CI: 49.3–52.2). Mean SBP and DBP were 121.2 mmHg (95% CI: 120.2–122.1) and 75.1 mmHg (95% CI: 74.3–75.8), respectively, and both were higher among males (p \<0.001). However, females had a higher mean heart rate (73.2 bpm, 95% CI: 72.5-73.9) compared to males (70 bpm, 95% CI: 69.1 – 70.8) (p \<0.001). Mean age was 49.1 years (95% CI: 48.0–50.2), with females slightly, but not significantly, older than males (48.6 vs. 49.7 years, p = 0.110). Males also had higher IPR (3.25 vs 3.00, p \<0.001) and WC (103.4 vs. 97.8 cm, p \<0.001). Whereas BMI was insignificantly higher among females (29.4 vs. 29.8 kg/m², p = 0.161).
+
+Among participants, 63.3% were non-Hispanic White, 63.1% were married or living with a partner, 36.8% were college graduates or above, and 91.5% had health insurance coverage. Marital status (p \<0.001) and insurance coverage (p= 0.002) differed by sex, whereas race (p = 0.294) and education (p = 0.177) did not. Overall, 10.8% of participants had diabetes and 24.6% reported taking BP-lowering medication; neither differed significantly by sex (p = 0.189 and p = 0.805, respectively). Males had higher mean HbA1c (5.71% vs. 5.65%, p = 0.045) and serum creatinine (0.99 vs. 0.77 mg/dL, p \<0.001), while eGFR did not differ by sex (p = 0.850). Survey-weighted descriptive characteristics are presented in Tables 1 and 2.
+
+```{r}
+#| include: false
+
+# ==== Importing data ====
+
+# Give names for NHANES files
+Files <- c(
+   Alb_Cr       = "ALB_CR_L.xpt",
+   Biochemistry = "BIOPRO_L.xpt",
+   Body         = "BMX_L.xpt",
+   BP           = "BPXO_L.xpt",
+   BP_Qes       = "BPQ_L.xpt",
+   Demo         = "DEMO_L.xpt",
+   Diabetes     = "DIQ_L.xpt",
+   GHB          = "GHB_L.xpt",
+   Insurance    = "HIQ_L.xpt",
+   Pregnancy    = "UCPREG_L.xpt"
+)
+
+# Get data from NHANES website  
+Data <- lapply(Files, function(x) {
+   read_xpt(
+      paste0(
+         "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2021/DataFiles/",
+         x
+      )
+   )
+})
+
+# Separate data into variables
+names(Data) <- names(Files)
+
+Alb_Cr       <- Data$Alb_Cr
+Biochemistry <- Data$Biochemistry
+Body         <- Data$Body
+BP           <- Data$BP
+BP_Qes       <- Data$BP_Qes
+Demo         <- Data$Demo
+Diabetes     <- Data$Diabetes
+GHB          <- Data$GHB
+Insurance    <- Data$Insurance
+Pregnancy    <- Data$Pregnancy
+
+# ==== Cleaning data ====
+
+## ==== 1. Urine Albumin-Creatinine ratio (ACR) ====
+
+# Rename columns 
+Alb_Cr <- Alb_Cr %>% 
+   rename (
+      Albumin    = URXUMA,
+      Creatinine = URXUCR,
+      ACR        = URDACT
+   )
+
+# Selecting interested in columns 
+Alb_Cr <- Alb_Cr %>% 
+   select(
+      SEQN, 
+      Albumin, 
+      Creatinine, 
+      ACR
+   )
+
+## ==== 2. Biochemistry (Serum Creatinine) ====
+
+# Rename columns 
+Biochemistry <- Biochemistry %>% 
+   rename (SCr = LBXSCR)
+
+# Selecting interested in columns 
+Biochemistry <- Biochemistry %>% 
+   select(
+      SEQN, SCr
+   )
+
+## ==== 3. Body ====
+
+# Rename columns 
+Body <- Body %>% 
+   rename (
+      Weight = BMXWT,
+      Height = BMXHT,
+      WC     = BMXWAIST,
+      BMI    = BMXBMI
+   )
+
+# Selecting interested in columns 
+Body <- Body %>% 
+   select(
+      SEQN, Weight, Height, WC, BMI
+   )
+
+## ==== 4. Blood Pressure (BP) ====
+
+# Rename columns 
+BP <- BP %>% rename (
+   Systolic1  = BPXOSY1,
+   Systolic2  = BPXOSY2,
+   Systolic3  = BPXOSY3,
+   Diastolic1 = BPXODI1,
+   Diastolic2 = BPXODI2,
+   Diastolic3 = BPXODI3,
+   Pulse1 = BPXOPLS1,
+   Pulse2 = BPXOPLS2,
+   Pulse3 = BPXOPLS3
+)
+
+# Selecting interested in columns 
+BP <- BP %>% 
+   select(
+      SEQN, Systolic1, Systolic2, Systolic3, 
+      Diastolic1,Diastolic2, Diastolic3, 
+      Pulse1, Pulse2, Pulse3
+   )
+
+## ==== 5. Blood Pressure medications ====
+
+# Rename columns 
+BP_Qes <- BP_Qes %>% 
+   rename (
+      Had_BP         = BPQ020,
+      Taking_BP_meds = BPQ150
+   )
+
+# Selecting interested in columns 
+BP_Qes <- BP_Qes %>%
+   select(
+      SEQN, 
+      Had_BP,
+      Taking_BP_meds
+   )
+
+# As these questions are only applicable for participant with HTN
+# Use code "3" to code "Not applicable" group
+BP_Qes$Taking_BP_meds [BP_Qes$Had_BP == 2] <- 3 
+
+# Change 9 codes to NA
+BP_Qes$Taking_BP_meds [BP_Qes$Had_BP == 2] <- 3 
+BP_Qes$Taking_BP_meds [BP_Qes$Taking_BP_meds == 9] <- NA
+
+## ==== 6. Demography  ====
+
+# Rename columns 
+Demo <- Demo %>% 
+   rename (
+      Sex            = RIAGENDR, 
+      Age            = RIDAGEYR,
+      Race           = RIDRETH3, 
+      Marital_status = DMDMARTZ,
+      IPR            = INDFMPIR, 
+      Education      = DMDEDUC2,
+      MEC_weight     = WTMEC2YR,
+      Strata         = SDMVSTRA,
+      PSU            = SDMVPSU
+   )
+
+# Selecting interested in columns 
+Demo <- Demo %>% 
+   select (
+      SEQN, 
+      Sex, 
+      Age, 
+      Race, 
+      Marital_status, 
+      IPR,
+      Education, 
+      MEC_weight, 
+      Strata, 
+      PSU
+   )
+
+# Change 7 and 9 codes to NA
+Demo$Education [Demo$Education == 9] <- NA
+
+Demo$Marital_status [Demo$Marital_status == 77 | 
+                        Demo$Marital_status == 99] <- NA
+
+# Absence of category "5" will lead to problems in interpreting
+# results later on in modeling. Its better to eliminate this now
+Demo$Race [Demo$Race == 6] <- 5
+Demo$Race [Demo$Race == 7] <- 6
+
+## ==== 7. Having Diabetes ====
+
+# Rename columns 
+Diabetes <- Diabetes %>% 
+   rename (Diabetes = DIQ010)
+
+# Selecting interested in columns 
+Diabetes <- Diabetes %>% 
+   select(
+      SEQN, Diabetes
+   )
+
+# Change 9 codes to NA
+Diabetes$Diabetes [Diabetes$Diabetes == 9] <- NA
+
+## ==== 8. Glycohemoglobin (HbA1c) ====
+
+# Rename columns 
+GHB <- GHB %>% 
+   rename (HbA1c = LBXGH)
+
+# Selecting interested in columns 
+GHB <- GHB %>% 
+   select(
+      SEQN, HbA1c
+   )
+
+## ==== 9. Insurance ====
+
+# Rename columns 
+Insurance <- Insurance %>% 
+   rename (Insurance = HIQ011)
+
+# Selecting interested in columns 
+Insurance <- Insurance %>% 
+   select(
+      SEQN, Insurance
+   )
+
+# Change 7 & 9 codes to NA
+Insurance$Insurance [Insurance$Insurance == 7 |
+                        Insurance$Insurance == 9] <- NA
+
+## ==== 10. Pregnancy ====
+
+# Rename columns 
+Pregnancy <- Pregnancy %>% 
+   rename (Pregnancy = URXPREG)
+
+# Selecting interested in columns 
+Pregnancy <- Pregnancy %>% 
+   select(
+      SEQN, Pregnancy
+   )
+
+# Change 3 & 4 codes to NA
+Pregnancy$Pregnancy [Pregnancy$Pregnancy == 3 |
+                        Pregnancy$Pregnancy == 4] <- NA
+
+# ==== Combine data ====
+
+Data <- Demo  %>% 
+   left_join (BP, by = "SEQN") %>%
+   left_join (Insurance,by = "SEQN") %>%
+   left_join (Body,by = "SEQN") %>%
+   left_join (Biochemistry,by = "SEQN") %>%
+   left_join (Alb_Cr,by = "SEQN") %>%
+   left_join (GHB,by = "SEQN") %>%
+   left_join (Diabetes,by = "SEQN") %>%
+   left_join (BP_Qes,by = "SEQN") %>%
+   left_join (Pregnancy,by = "SEQN")
+
+# ==== Create derived variables ====
+
+## ==== 1. Avg Systolic & Diastolic BP & Pulse ====
+
+# Calculate average for systolic BP, diastolic BP, and Pulse
+Data <- Data %>% mutate(
+   SBP_avg = rowMeans(
+      select(., Systolic1, Systolic2,Systolic3),
+      na.rm = T
+   ),
+   
+   DBP_avg = rowMeans(
+      select(., Diastolic1, Diastolic2, Diastolic3),
+      na.rm = T
+   ),
+   
+   Pulse_avg = rowMeans(
+      select(., Pulse1, Pulse2, Pulse3),
+      na.rm = T
+   )
+)
+
+# Convert NaN to NA
+Data$SBP_avg[is.nan(Data$SBP_avg)] <- NA
+Data$DBP_avg[is.nan(Data$DBP_avg)] <- NA
+Data$Pulse_avg[is.nan(Data$Pulse_avg)] <- NA
+
+## ==== 2. Glomerular Filtration Rate (eGFR) ====
+
+# Create a function to calculate eGFR using 2021 CKD-EPI creatinine equation
+# eGFR = 142 * (min(SCr/k, 1)^ a) * (max(SCr/k, 1)^ -1.200) *
+#        (0.9938^Age) * Sex_factor
+# Sex factor = 1 in males and 1.012 in females
+
+GFR_calculator <- function(SCr, Age, Sex){
+   
+   # Handling missing values
+   if (is.na(SCr) | is.na(Age) | is.na(Sex)){
+      return(NA)
+   }
+   
+   # Determining the value of k, a, and Sex factor
+   # Sex: males = 1, females = 2
+   if (Sex == 1) {
+      k <-  0.9
+      a <- -0.302
+      Sex_factor <- 1
+      
+   } else if (Sex == 2){
+      k <-  0.7
+      a <- -0.241
+      Sex_factor <- 1.012
+      
+   } else {
+      return(NA)
+   }
+   
+   # Calculate eGFR
+   GFR <- 142 * (min(SCr/k, 1)^ a) * (max(SCr/k, 1)^ -1.200) *
+      (0.9938^Age) * Sex_factor
+   
+   return(GFR)
+}
+
+# Create a column for total weekly moderate physical activity
+Data <- Data %>% 
+   rowwise() %>%
+   mutate (eGFR = GFR_calculator(SCr, Age, Sex)) %>%
+   ungroup()
+
+# ==== Exclusion criteria ====
+
+# 1. Exclude < 18 years old
+sum (Data$Age < 18)
+
+Data <- Data %>% 
+   filter (Age >= 18)
+
+# 2. Exclude pregnant women
+
+## 1 = positive results, 2 = negative results
+table(Data$Pregnancy, useNA = "ifany")
+
+Data <- Data %>% 
+   filter (Pregnancy == 2 | is.na(Pregnancy))
+
+# 3. Exclude missing BP data
+sum(is.na(Data$SBP_avg) | is.na(Data$DBP_avg))
+
+Data <- Data %>% 
+   filter (!is.na(SBP_avg) & !is.na(DBP_avg))
+
+# 4. Exclude missing covariates data
+
+## Find number of missing data
+map_dfr(
+   c(
+      "SBP_avg", "DBP_avg", "Pulse_avg", "Age", "Sex", "Race", "Marital_status",
+      "Education", "IPR", "Insurance", "BMI", "HbA1c", "WC", "Diabetes", "ACR",
+      "eGFR", "Taking_BP_meds"
+   ),
+   function (var) {
+      tibble(
+         var  = var,
+         Miss = sum(is.na(Data[[var]]))
+      )
+   }
+)
+
+# Exclude missing data
+Data <- Data %>% 
+   subset(.,
+          complete.cases(Data[, 
+                              c( 
+                                 "Pulse_avg", "Age", "Sex", "Race", "Marital_status", 
+                                 "Education", "IPR", "Insurance","BMI", "WC",
+                                 "HbA1c",  "Diabetes", "ACR", "eGFR", "Taking_BP_meds"
+                              )
+          ])
+   )
+
+# ==== Adjust categorical data variables ====
+
+Data$Sex <- factor(
+   Data$Sex,
+   labels = c("Male", "Female"),
+   levels = c(1, 2)
+)
+
+Data$Race <- factor(
+   Data$Race,
+   labels = c(
+      "Mexican American", "Other Hispanic", "Non Hispanic White", "Non Hispanic Black", 
+      "Non Hispanic Asian", "Other Race"
+   ),
+   levels = c(1, 2, 3, 4, 5, 6)
+)
+
+Data$Insurance <- factor(
+   Data$Insurance, 
+   labels = c("Not-covered", "Covered"),
+   levels = c(2, 1)
+)
+
+Data$Education <- factor(
+   Data$Education, 
+   labels = c(
+      "Less than 9th grade", 
+      "9-11th grade (Includes 12th grade with no diploma)",
+      "High school graduate/GED or equivalent",
+      "Some college or AA degree", 
+      "College graduate or above"
+   ),
+   levels = c(1, 2, 3, 4, 5)
+)
+
+Data$Diabetes <- factor(
+   Data$Diabetes,
+   labels = c("No", "Yes", "Borderline"),
+   levels = c(2, 1, 3)
+)
+
+Data$Marital_status <- factor(
+   Data$Marital_status,
+   labels = c(
+      "Never married",
+      "Married/Living with partner",
+      "Widowed/Divorced/Separated"
+   ),
+   levels = c(3, 1, 2)
+)
+
+Data$Taking_BP_meds <- factor(
+   Data$Taking_BP_meds,
+   labels = c(
+      "Not diagnosed",
+      "Not taking",
+      "Taking"
+   ),
+   levels = c(3, 2, 1)
+)
+
+# ==== Log variables ==== 
+
+## ==== 1. Create log data ====
+Data <- Data %>% 
+   mutate (ACR_log = log10(ACR))
+
+Data <- Data %>% 
+   mutate (eGFR_log = log10(eGFR))
+
+# Create look-up table
+lookup <- list(
+   Sex  = "Sex",
+   Age  = "Age",
+   Race = "Race/ethnicity",
+   Marital_status = "Marital status",
+   IPR        = "IPR",
+   Education  = "Education level",
+   Systolic1  = "SBP: First measurment",
+   Systolic2  = "SBP: Second measurment",
+   Systolic3  = "SBP: Third measurment",
+   Diastolic1 = "DBP: First measurment",
+   Diastolic2 = "DBP: Second measurment",
+   Diastolic3 = "DBP: Third measurment",
+   Pulse1     = "Pulse rate: First measurment",
+   Pulse2     = "Pulse rate: Second measurment",
+   Pulse3     = "Pulse rate: Third measurment",
+   Insurance  = "Insurance status",
+   WC  = "WC",
+   BMI = "BMI",
+   SCr = "Serum Creatinine",
+   ACR = "ACR",
+   HbA1c     = "HbA1c",
+   Diabetes  = "Diabetes status",
+   Taking_BP_meds = "BP-lowering medications",
+   SBP_avg = "Mean SBP",
+   DBP_avg = "Mean DBP",
+   Pulse_avg = "Mean Pulse rate",
+   eGFR = "eGFR",
+   ACR_log  = "Log (ACR)",
+   eGFR_log = "Log (eGFR)"
+)
+
+## ==== 2. Check on log data ====
+
+# Create a for loop to plot histograms and boxplots, and calculate summaries
+# for each column
+
+Exploring_log <- function(vars) {
+   for (var in vars) {
+      
+      Var_label = lookup[[var]]
+      
+      # Histogram with normal distribution curve
+      Histogram <- ggplot(
+         Data,
+         aes(x = .data[[var]])
+      ) +
+         geom_histogram(
+            aes(y = after_stat(density)),
+            bins = 30,
+            color = "black",
+            fill = "lightblue"
+         ) +
+         stat_function(
+            fun = dnorm,
+            args = list(
+               mean = mean(Data[[var]], na.rm = TRUE),
+               sd = sd(Data[[var]], na.rm = TRUE)),
+            color = "red",
+            linewidth = 1
+         ) +
+         labs(
+            title = paste("Histogram of", Var_label),
+            y = "Density",
+            x = Var_label
+         ) 
+      
+      print(Histogram)
+      
+      # Boxplot
+      Box_plot <- ggplot(
+         Data,
+         aes(y = .data[[var]])
+      ) +
+         geom_boxplot(fill = "lightblue") +
+         labs(
+            title = paste("Boxplot of", Var_label),
+            y = Var_label,
+            x = ""
+         ) 
+      
+      print(Box_plot)
+      
+      # Summary statistics
+      cat("\n", "Variable:", Var_label, "\n")
+      print(summary(Data[[var]]))
+   }
+}
+
+# Apply function
+map(
+   c("ACR_log", "eGFR_log"), 
+   Exploring_log
+)
+
+# ==== Survey-weighted design ==== 
+
+# Create survey-weighted design 
+NHANES_design <- svydesign(
+   ids = ~ PSU,
+   strata = ~ Strata,
+   weights = ~ MEC_weight ,
+   nest = TRUE,
+   data = Data
+)
+
+# ==== Survey-weighted descriptive analysis ==== 
+
+# Function to return p <0.001 instead of 0.000
+p0001 = function(x) {
+   ifelse(
+      is.na(x),
+      "",
+      ifelse(
+         x < 0.001,
+         "<0.001",
+         sprintf("%.3f", x)
+      )
+   )
+}
+
+## ==== 1. Categorical Data ====
+
+# Create a summarizing function to calculate: mean, 95%CI, and p value
+weighted_Cate_summary <- function(var) {
+   
+   # Extract variable data
+   x <- NHANES_design$variables[[var]]
+   
+   # Continue preparing variable data
+   x <- as.factor(x)
+   levels_x <- levels(x)
+   
+   # P-value
+   pp <- svychisq(
+      as.formula(paste("~", var, "+ Sex")),
+      design = NHANES_design
+   )$p.value
+   
+   ## Return summary as a table
+   # Results container
+   table <- list()
+   
+   # Table first row 
+   table[[1]] <- tibble(
+      Variable = lookup[[var]],
+      All      = "",
+      Males    = "",
+      Females  = "",
+      p_value  = pp
+   )
+   
+   # Loop through variable's categories
+   for (i in seq_along(levels_x)) {
+      
+      level <- levels_x[i]
+      
+      # Temporary design
+      Temp_design <- NHANES_design
+      
+      # Create a dummy
+      # 1 = participant belongs to this category
+      # 0 = participant does not
+      # NA = original variable was missing
+      Temp_design$variables$Dummy <- ifelse(is.na(x),NA,
+                                            ifelse(x == level, 1, 0)
+      )
+      
+      # Extract males and females subsets
+      Males_design <- subset(
+         Temp_design,
+         Sex == "Male"
+      )
+      
+      Females_design <- subset(
+         Temp_design,
+         Sex == "Female"
+      )
+      
+      # Calculate weighted proportion
+      All_per     <- svymean(~Dummy, design = Temp_design, na.rm = TRUE)      
+      Males_per   <- svymean(~Dummy, design = Males_design, na.rm = TRUE)
+      Females_per <- svymean(~Dummy, design = Females_design, na.rm = TRUE)
+      
+      # Table's rest rows 
+      table[[i + 1]] <- tibble(
+         Variable = level,
+         All      = sprintf(
+            "%.1f (%.1f - %.1f)",
+            coef(All_per) * 100,
+            confint(All_per)[, 1] * 100,
+            confint(All_per)[, 2] * 100
+         ),
+         
+         Males    = sprintf(
+            "%.1f (%.1f - %.1f)",
+            coef(Males_per) * 100,
+            confint(Males_per)[, 1] * 100,
+            confint(Males_per)[, 2] * 100
+         ),
+         
+         Females  = sprintf(
+            "%.1f (%.1f - %.1f)",
+            coef(Females_per) * 100,
+            confint(Females_per)[, 1] * 100,
+            confint(Females_per)[, 2] * 100
+         ),
+         
+         p_value  = NA_real_
+      )
+   }
+   
+   bind_rows(table)
+}
+
+# Apply function and print table in a tidy way
+weighted_cate <- map_dfr(
+   c(
+      "Race", "Marital_status", "Education", "Insurance", 
+      "Taking_BP_meds", "Diabetes"
+   ),
+   weighted_Cate_summary
+)%>%
+   gt() %>%
+   tab_style(
+      style = cell_text(indent = px(20)),
+      locations = cells_body(
+         rows = All != ""
+      )
+   ) %>%
+   fmt(
+      columns = p_value,
+      fns = p0001) %>%
+   tab_header(
+      title = md(
+         "Table 1: Summary of baseline categorical characteristics"
+      )
+   )%>%
+   cols_label(
+      All     = "Total Sample",
+      Males   = "Males",
+      Females = "Females",
+      p_value = "P-value"
+   ) %>%
+   tab_footnote(
+      footnote = "P-values compare the proportion of each covariate between males and females using survey-weighted Chi square.",
+      locations = cells_column_labels(columns = p_value)
+   ) %>%
+   tab_source_note(
+      source_note = md(
+         "Percentages and 95% CIs are survey-weighted."
+      )
+   )
+
+## ==== 2. Continuous Data ====
+
+# Create a summarizing function to calculate: mean, 95%CI, and p value
+weighted_Cont_summary <- function(var){
+   
+   # Extract variable
+   x <- NHANES_design$variables[[var]]
+   
+   # Extract males and females subsets
+   Males_design <- subset(
+      NHANES_design,
+      Sex == "Male"
+   )
+   
+   Females_design <- subset(
+      NHANES_design,
+      Sex == "Female"
+   )
+   
+   # Create a formula
+   formula <- as.formula(paste0("~", var))
+   
+   # Calculate means
+   All_mean     <- svymean(formula, NHANES_design, na.rm = TRUE)
+   Males_mean   <- svymean(formula, Males_design, na.rm = TRUE)
+   Females_mean <- svymean(formula, Females_design, na.rm = TRUE)
+   
+   
+   # P-value
+   pp <- svyglm(
+      as.formula(paste0(var, " ~ Sex")),
+      design = NHANES_design
+   )
+   
+   # Return summary as a table
+   table <- tibble(
+      Variable = lookup[[var]],
+      All      = sprintf(
+         "%.2f (%.2f - %.2f)",
+         coef(All_mean),
+         confint(
+            All_mean,
+            df = degf(NHANES_design)
+         )[, 1],  
+         confint(
+            All_mean,
+            df = degf(NHANES_design)
+         )[, 2]
+      ),
+      
+      Males    = sprintf(
+         "%.2f (%.2f - %.2f)",
+         coef(
+            Males_mean,
+            df = degf(NHANES_design)
+         ),
+         confint(
+            Males_mean,
+            df = degf(NHANES_design)
+         )[, 1],  
+         confint(
+            Males_mean,
+            df = degf(NHANES_design)
+         )[, 2]
+      ),
+      
+      Females  = sprintf(
+         "%.2f (%.2f - %.2f)",
+         coef(Females_mean),
+         confint(
+            Females_mean,
+            df = degf(NHANES_design)
+         )[, 1],  
+         confint(
+            Females_mean,
+            df = degf(NHANES_design)
+         )[, 2]
+      ),
+      
+      p_value  = regTermTest(pp, ~ Sex)$p
+   )
+   
+   table
+}
+
+# Apply function and print table in a tidy way
+weighted_cont <- map_dfr(
+   c(
+      "SBP_avg", "DBP_avg", "Pulse_avg", "Age", "IPR", "WC",
+      "BMI", "HbA1c", "ACR", "SCr", "eGFR"
+   ), 
+   weighted_Cont_summary
+) %>%
+   gt() %>%
+   fmt(
+      columns = p_value,
+      fns = p0001) %>%
+   tab_header(
+      title = md(
+         "Table 2: Summary of baseline continuous characteristics"
+      )
+   )%>%
+   cols_label(
+      All     = "Total Sample",
+      Males   = "Males",
+      Females = "Females",
+      p_value = "P-value"
+   ) %>%
+   tab_footnote(
+      footnote = "P-values are from survey-adjusted Wald test comparing males and females.",
+      locations = cells_column_labels(columns = p_value)
+   ) %>%
+   tab_source_note(
+      source_note = md(
+         "Means are presented as survey-weighted mean (95% CIs)."
+      )
+   )
+
+
+```
+
+```{r}
+#| echo: false
+
+weighted_cate
+```
+
+```{r}
+#| echo: false
+
+weighted_cont
+```
+
+### 3.2 Relationship between BP and covariates
+
+#### 3.2.1 Relationship with categorical covariates
+
+Survey-weighted comparisons demonstrated significant differences in SBP across race groups (overall p = 0.013). In Tukey-adjusted pairwise comparisons, SBP was significantly lower among Mexican American participants than among non-Hispanic Black participants (−5.85 mmHg, 95% CI: −10.75 to −0.95, p = 0.018) and lower among non-Hispanic Black participants than among non-Hispanic Asian participants by 6.89 mmHg (95% CI: 0.19 to 13.59, p = 0.043). The remaining pairwise comparisons were not statistically significant after Tukey adjustment.
+
+For DBP, race was also significantly associated with BP overall (p = 0.006). Tukey-adjusted comparisons showed lower DBP among Mexican American participants compared with non-Hispanic Black participants (−5.00 mmHg, 95% CI: −8.55 to −1.45, p = 0.006), lower DBP among other Hispanic participants compared with non-Hispanic Black participants (−4.20 mmHg, 95% CI: −7.38 to −1.01, p = 0.010), and lower DBP among non-Hispanic White participants compared with non-Hispanic Black participants (−3.60 mmHg, 95% CI: −6.03 to −1.18, p = 0.004). Non-Hispanic Black participants also had higher DBP than participants classified as other race (3.51 mmHg, 95% CI: 0.06 to 6.97, p = 0.045). Other pairwise comparisons were not statistically significant. Figure 2 illustrates the distribution of weighted mean SBP and DBP with 95% confidence intervals across race groups.
+
+```{r}
+#| include: false
+
+# ==== Weighted ANOVA ==== 
+
+# Create a function to perform ANOVA (plus post-hoc) and return results as a table
+wt_ANOVA <- function(BP, vars) {
+   
+   # Create empty table
+   Results <- tibble()
+   
+   for (var in vars) {
+      
+      Var_label <- lookup [[var]]
+      
+      # Create formulas
+      formula1 <- as.formula(
+         paste0(BP, "_avg~", var)
+      )
+      
+      formula2 <- as.formula(
+         paste0("~", var)
+      )
+      
+      # Weighted ANOVA
+      Model <- svyglm(formula1, design = NHANES_design)
+      
+      # Estimated marginal means
+      Emm <- emmeans(Model, formula2)
+      
+      # Tukey-adjusted pairwise comparisons
+      Pair <- pairs(Emm, adjust = "tukey")
+      
+      # Overall P-value 
+      ANV <- regTermTest(Model, formula2)
+      
+      # Create separated tables
+      table_1 <- tibble (
+         contrast = Var_label,
+         overall = as.numeric(ANV$p),
+         B = NA,
+         adj.p.value =NA
+      )
+      
+      if (ANV$p < 0.05) {
+         
+         table_2 <- tidy(Pair, conf.int = TRUE) %>% 
+            mutate(
+               B = sprintf(
+                  "%.3f (%.3f - %.3f)",
+                  estimate,
+                  conf.low,
+                  conf.high
+               ),
+               overall = NA
+            ) %>% 
+            select(c(contrast, overall, B, adj.p.value))
+         
+      } else {
+         
+         table_2 <- tibble()
+      }
+      
+      # Combine tables as one
+      Results <- bind_rows(Results, table_1, table_2)
+   }
+   
+   # Retrun results in a tidy way
+   Results %>% 
+      gt() %>%
+      fmt(
+         columns = c(overall, adj.p.value),
+         fns = p0001
+      ) %>%
+      cols_label(
+         contrast = "Variable",
+         overall  = "Overall p-value",
+         B        = "Mean difference (95% CI)",
+         adj.p.value = "Tukey-adjusted P-value"
+      ) %>%
+      sub_missing(
+         columns = c(B, overall, adj.p.value),
+         missing_text = ""
+      ) %>%
+      tab_style(
+         style = cell_text(indent = px(15)),
+         locations = cells_body(
+            columns = contrast,
+            rows = !contrast %in% c(
+               "Race",
+               "Marital status",
+               "Education level",
+               "Diabetes",
+               "BP-lowering medications"
+            )
+         )
+      ) %>%
+      tab_style(
+         style = cell_borders(
+            sides = c("bottom", "left", "right"),
+            color = "transparent",
+            weight = px(0)
+         ),
+         locations = cells_body(
+            rows = contrast %in% c(
+               "Race",
+               "Marital status",
+               "Education level",
+               "Diabetes",
+               "BP-lowering medication"
+            )
+         )
+      ) %>%
+      tab_footnote(
+         footnote = "Overall p-values compare all subgroups using survey-weighted ANOVA.",
+         locations = cells_column_labels(columns = overall)
+      )  %>%
+      tab_footnote(
+         footnote = " Tukey-adjusted pairwise p-values based on comparisons between subgroups.",
+         locations = cells_column_labels(columns = adj.p.value)
+      )
+}
+
+# Apply function for SBP
+ANOVA_SBP <- wt_ANOVA(
+   "SBP",
+   c(
+      "Race",
+      "Marital_status",
+      "Education",
+      "Diabetes",
+      "Taking_BP_meds"
+   )
+) %>%
+   tab_header(
+      title = md(
+         "Table 3: Survey-weighted comparisons of non-binary categorical variables for SBP"
+      )
+   )
+
+# Apply function for DBP
+ANOVA_DBP <- wt_ANOVA(
+   "DBP",
+   c(
+      "Race",
+      "Marital_status",
+      "Education",
+      "Diabetes",
+      "Taking_BP_meds"
+   )
+) %>%
+   tab_header(
+      title = md(
+         "Table 4: Survey-weighted comparisons of non-binary categorical variables for DBP"
+      )
+   )
+
+# ==== Descriptive plots for categorical data ==== 
+
+# Create a function to plot weighted BP mean (with 95% CI) across covariates groups
+plot_categorical <- function(var) {
+   
+   SBP_formula <- as.formula("~SBP_avg")
+   
+   DBP_formula <- as.formula("~DBP_avg")
+   
+   var_formula <- as.formula(
+      paste0("~", var)
+   )
+   
+   SBP_by <- svyby(
+      SBP_formula, 
+      var_formula,
+      design = NHANES_design,
+      FUN = svymean,
+      na.rm = TRUE
+   )
+   
+   DBP_by <- svyby(
+      DBP_formula,
+      var_formula,
+      design = NHANES_design,
+      FUN = svymean,
+      na.rm = TRUE
+   )
+   
+   # Convert SE into 95% CI
+   SBP_by <- SBP_by %>%
+      rename(BP_avg = SBP_avg) %>%
+      mutate(
+         CI_lower = BP_avg - 1.96 * se,
+         CI_upper = BP_avg + 1.96 * se,
+         BP_type = "SBP"
+      )
+   
+   DBP_by <- DBP_by %>%
+      rename(BP_avg = DBP_avg) %>%
+      mutate(
+         CI_lower = BP_avg - 1.96 * se,
+         CI_upper = BP_avg + 1.96 * se,
+         BP_type = "DBP"
+      )
+   
+   # Combine DBP and SBP
+   BP_by <- bind_rows(SBP_by, DBP_by)
+   
+   # Plot  BP weighted means with CI across var groups
+   Var_label = lookup [[var]]
+   
+   ggplot(
+      BP_by, 
+      aes(x = .data[[var]], y = BP_avg)
+   ) +
+      geom_point() +
+      geom_errorbar(
+         aes(
+            ymin = CI_lower, 
+            ymax = CI_upper
+         ),
+         width = 0.15
+      ) +
+      facet_wrap(
+         ~BP_type, 
+         scales = "free_y"
+      ) +
+      labs(
+         title = paste0("Survey-weighted mean BP by ", Var_label, " (with 95% CI)"),
+         x = Var_label,
+         y = "Mean BP (mmHg)"
+      ) +
+      theme(
+         axis.text.x = element_text(
+            angle = 45,
+            hjust = 1
+         )
+      )
+}
+```
+
+```{r}
+#| echo: false
+
+plot_categorical("Race") +
+      labs(title = "Figure 2: Differences in weighted mean BP with 95% CI across race/ethnici groups")
+```
+
+Marital status was significantly associated with SBP (overall p \<0.001). Compared with never-married participants, those who were married or living with a partner had a 3.12 mmHg lower SBP (95% CI: 1.32–4.91, p = 0.001), while widowed, divorced, or separated participants had a 7.52 mmHg lower SBP (95% CI: 5.42–9.62, p \<0.001). Married or cohabiting participants also had lower SBP than widowed, divorced, or separated participants (4.40 mmHg, 95% CI: 2.56–6.24, p \<0.001). For DBP, the overall association with marital status did not reach statistical significance (p = 0.069).
+
+Education level was significantly associated with both SBP (p \<0.001) and DBP (p = 0.021). However, most Tukey-adjusted pairwise comparisons were not statistically significant. For SBP, the only statistically significant pairwise difference was between high school graduates/GED or equivalent and college graduates or above, with the former having higher SBP by approximately 4.62 mmHg (95% CI: 2.18–7.06, p \<0.001). For DBP, participants with some college or an associate degree had higher DBP than college graduates or above (1.92 mmHg, 95% CI: 0.35–3.50, p = 0.016). The remaining education-level comparisons were not statistically significant after Tukey adjustment.
+
+Diabetes status was only significantly associated with SBP (p \<0.001) (see Figure 3). Participants with diabetes had a weighted mean SBP approximately 6.06 mmHg lower than participants without diabetes (95% CI: 3.70–8.42, p \<0.001). The differences involving borderline diabetes were not statistically significant.
+
+Use of BP-lowering medication was significantly associated with SBP and DBP (both p \<0.001). Participants not taking BP-lowering medication had a higher weighted mean SBP compared to not diagnosed participants by 11.37 mmHg (95% CI: 6.98 - 15.77, p \<0.001). Meanwhile, participants taking BP-lowering medication had a higher weighted mean SBP compared to not diagnosed participants by 12.07 mmHg (95% CI: 10.36 - 13.77, p \<0.001). In contrast, participants not taking BP-lowering medication had a weighted mean DBP 3.87 mmHg higher than those taking BP-lowering medication and 7.01 mmHg higher than not diagnosed participants (p = 0.003, \<0.001, respectively). Participants taking BP-lowering medication had a higher weighted mean DBP compared to not diagnosed participants by 3.14 mmHg (p \<0.001).
+
+Health insurance status was not significantly associated with either SBP or DBP (p = 0.138 and p = 0.877, respectively). All plots will be provided in the “descriptive plots” supplementary file.
+
+```{r}
+#| echo: false
+
+plot_categorical("Diabetes") +
+      labs(title = "Figure 3: Differences in weighted mean BP with 95% CI across diabetes status")
+```
+
+```{r}
+#| echo: false
+
+ANOVA_SBP
+```
+
+```{r}
+#| echo: false
+
+ANOVA_DBP
+```
+
+#### 3.2.2 Relationship with continuous covariates
+
+The correlation heat map of continuous variables demonstrates expected relationships between BP and continuous variables. The map shows a positive correlation between mean SBP and mean DBP (r = 0.63, p \<0.001). Mean SBP additionally showed a positive correlation with age (r = 0.39, p \<0.001) and a weaker positive correlation with both HbA1c (r = 0.18, p \<0.001) and log-transformation of ACR (r = 0.24, p \<0.001). In contrast, a negative association was observed between SBP and pulse rate (r = -0.04, p = 0.007) and with the log-transformation of eGFR (r = -0.25, p \<0.001). Mean DBP exhibited positive correlations with pulse rate (r = 0.28, p \<0.001), WC (r = 0.27, p \<0.001), BMI (r = 0.25, p \<0.001), HbA1c (r = 0.11, p \<0.001), and log ACR (r = 0.1, p \<0.001). Pulse rate was correlated with age, IPR, WC, BMI, HbA1c, log ACR, and log eGFR (r = -0.16, -0.11, 0.12, 0.13, 0.12, 0.08, 0.13, respectively; all p \<0.001).
+
+The correlation heat map also illustrates clustering among the variables, including a negative correlation between log ACR and log eGFR (r = -0.21, p \<0.001). Age was positively correlated with IRP (r = 0.08, p \<0.001), HbA1c (r = 0.27, p \<0.001), and log ACR (r = 0.26, p \<0.001), while it was negatively correlated with log eGFR (r = -0.63, p \<0.001). Another clustering was among anthropometric measures; BMI was strongly correlated with WC (r = 0.90, p \<0.001). Figure 4 demonstrates the correlation heat map between the continuous covariates.
+
+Overall, these findings were consistent with established physiological relationships and provided valuable information regarding potential multicollinearity among predictors before the development of multivariable regression.
+
+```{r}
+#| include: false
+
+# ==== Correlation Map Heat ====
+
+# 1. Calculate survey‐weighted Pearson correlation
+cor_result <- svycor(
+   ~ SBP_avg + DBP_avg + Pulse_avg + Age + IPR + WC + BMI + HbA1c + 
+      ACR_log + eGFR_log,
+   design = NHANES_design,
+   sig.stats = TRUE,
+   bootn = 2000
+)
+
+# 2. Extract correlation and p-value matrices
+cor_matrix <- cor_result$cors
+p_matrix <- cor_result$p.values
+
+# 3. Fix labels
+rownames(cor_matrix) <- lookup[rownames(cor_matrix)]
+colnames(cor_matrix) <- lookup[colnames(cor_matrix)]
+
+rownames(p_matrix) <- lookup[rownames(p_matrix)]
+colnames(p_matrix) <- lookup[colnames(p_matrix)]
+
+# 4. Convert correlation matrix to long format
+cor_long <- as.data.frame(cor_matrix) %>%
+   rownames_to_column("Variable1") %>%
+   pivot_longer(
+      -Variable1,
+      names_to = "Variable2",
+      values_to = "r"
+   )
+
+p_long <- as.data.frame(p_matrix) %>%
+   rownames_to_column("Variable1") %>%
+   pivot_longer(
+      -Variable1,
+      names_to = "Variable2",
+      values_to = "p"
+   )
+
+# 5. Combine them and make star system
+heatmap_data <- cor_long %>%
+   left_join(
+      p_long,
+      by = c("Variable1", "Variable2")
+   ) %>%
+   mutate(
+      Variable1 = factor(Variable1, levels = colnames(cor_matrix)),
+      Variable2 = factor(Variable2, levels = rev(colnames(cor_matrix)))
+   ) %>%
+   filter(Variable1 != Variable2) %>%
+   mutate(
+      stars = case_when(
+         p < 0.001 ~ "***",
+         p < 0.01  ~ "**",
+         p < 0.05  ~ "*",
+         TRUE      ~ ""
+      )
+   )
+```
+
+```{r}
+#| echo: false
+
+# 6. Plot as heat map
+ggplot(
+   heatmap_data,
+   aes(
+      x = Variable1,
+      y = Variable2,
+      fill = r
+   )
+) +
+   geom_tile() +
+   geom_text(
+      aes(label = paste0(
+         round(r, 2),
+         stars
+      )
+      ),
+      size = 3
+   ) +
+   scale_fill_gradient2(
+      low = "darkblue",
+      mid = "white",
+      high = "red",
+      midpoint = 0,
+      limits = c(-1, 1),
+      name = "Pearson r"
+   ) +
+   theme_minimal() +
+   theme(
+      axis.text.x = element_text(
+         angle = 45,
+         hjust = 1
+      ),
+      axis.title = element_blank()
+   ) +
+   coord_equal() +
+   labs (
+      title = "Figure 4: Survey-weighted Pearson correlation heatmap of continuous covariates"
+      )
+```
+
+### 3.3 Weighted multivariable regression models
+
+Survey-weighted multivariable linear regression was used to estimate independent adjusted associations with SBP and DBP. The primary clinical specification differed between the two outcomes. For SBP, the primary model included WC, log-transformed ACR, and HbA1c. For DBP, the primary model included BMI, log-transformed eGFR, and HbA1c. Both models additionally included the prespecified demographic and socioeconomic variables. Heart rate was subsequently added to the primary model.
+
+#### 3.3.1 Alternative specifications models
+
+Eight alternative specifications were examined for each outcome by substituting alternative measures of adiposity (WC versus BMI), renal function (log-transformed ACR versus log-transformed eGFR), and glycemic status (HbA1c versus categorical diabetes status). Maximum VIF and model deviance were reported to characterize multicollinearity and model fit, respectively. For SBP, maximum VIF values ranged from 3.11 to 21.09, and deviance ranged from 952,219.3 to 976,742.7. Model 1 had a maximum VIF of 3.11 and a deviance of 953,323.6 and was chosen as the primary SBP model. For DBP, maximum VIF values ranged from 4.58 to 7.39, with deviance ranging from 448,614.4 to 455,620.7. Model 7 was chosen as the primary DBP model.
+
+```{r}
+#| include: false
+
+# ==== Weighted multivariable regression ====
+
+## ==== Create new design ====
+
+# Copy design
+MultiM_design <- NHANES_design
+
+# New race variable with 3 groups 
+MultiM_design$variables$Race_new <- factor(
+   ifelse(
+      MultiM_design$variables$Race == "Non Hispanic White",
+      "Non Hispanic White",
+      ifelse(
+         MultiM_design$variables$Race == "Non Hispanic Black",
+         "Non Hispanic Black",
+         "Other Racial Groups"
+      )
+   ),
+   levels = c("Non Hispanic White","Non Hispanic Black", "Other Racial Groups")
+)
+
+# New education variable with 2 groups
+MultiM_design$variables$Education_new <- factor(
+   ifelse(
+      MultiM_design$variables$Education %in% c(
+         "Less than 9th grade",
+         "9-11th grade (Includes 12th grade with no diploma)"
+      ),
+      "12th grade or Less",
+      "High school graduate/GED or above"
+   ),
+   levels = c("12th grade or Less", "High school graduate/GED or above")
+)
+
+## ==== Alternative model specifications ====
+Alter_mod_tab <- function(BP){
+   
+   # Model formulas
+   Mformulas <- list(
+      
+      M1 = paste0(
+         BP, "_avg ~ Age + Sex + Race_new + Marital_status + Education_new +
+         IPR + Insurance + WC + ACR_log + HbA1c"
+      ),
+      
+      M2 = paste0(
+         BP, "_avg ~ Age + Sex + Race_new + Marital_status + Education_new +
+      IPR + Insurance + WC + ACR_log + Diabetes"
+      ),
+      
+      M3 = paste0(
+         BP, "_avg ~ Age + Sex + Race_new + Marital_status +
+      Education_new + IPR + Insurance +
+      WC + eGFR_log + HbA1c"
+      ),
+      
+      M4 = paste0(
+         BP, "_avg ~ Age + Sex + Race_new + Marital_status +
+      Education_new + IPR + Insurance +
+      WC + eGFR_log + Diabetes"
+      ),
+      
+      M5 = paste0(
+         BP, "_avg ~ Age + Sex + Race_new + Marital_status +
+      Education_new + IPR + Insurance +
+      BMI + ACR_log + HbA1c"
+      ),
+      
+      M6 = paste0(
+         BP, "_avg ~ Age + Sex + Race_new + Marital_status +
+      Education_new + IPR + Insurance +
+      BMI + ACR_log + Diabetes"
+      ),
+      
+      M7 = paste0(
+         BP, "_avg ~ Age + Sex + Race_new + Marital_status +
+      Education_new + IPR + Insurance +
+      BMI + eGFR_log + HbA1c"
+      ),
+      
+      M8 = paste0(
+         BP, "_avg ~ Age + Sex + Race_new + Marital_status +
+      Education_new + IPR + Insurance +
+      BMI + eGFR_log + Diabetes"
+      )
+   )
+   
+   # Fitting models
+   Models <- map(
+      Mformulas,
+      \(f) svyglm(f, design = MultiM_design)
+   )
+   
+   # VIFs
+   vifs <- map(
+      Models, 
+      vif
+   )
+   
+   # Deviance
+   DV <- map(
+      Models, 
+      deviance
+   )
+   
+   # Return results as a table
+   table <- tibble(
+      Model = c("Model 1", "Model 2", "Model 3", "Model 4", "Model 5", "Model 6", "Model 7", "Model 8"),
+      
+      Adiposity = c(rep(c("WC", "BMI"),  each = 4)),
+      
+      Renal = c(rep(c("ACR","eGFR"), times = 2, each = 2)),
+      
+      Glycemic = c(rep(c("HbA1c","Diabetes"), times = 4)),
+      
+      Max_VIF = map_dbl(
+         vifs,
+         \(x) max(x[, "GVIF^(1/(2*Df))"])
+      ),
+      
+      Deviance = as.numeric(DV)
+   )
+   
+   # Present it in a tidy way
+   table %>% 
+      gt()  %>%
+      cols_align(
+         align = "center",
+         columns = c(
+            Adiposity,
+            Renal,
+            Glycemic,
+            Max_VIF,
+            Deviance
+         )
+      ) %>%
+      fmt_number(
+         columns = Max_VIF,
+         decimals = 2
+      ) %>% 
+      cols_label(
+         Max_VIF = "Maximum VIF"
+      ) %>%
+      tab_footnote(
+         footnote = "ACR and eGFR were log-transformed before analysis.",
+         locations = cells_column_labels(columns = "Renal")
+      )  %>%
+      tab_footnote(
+         footnote = "HbA1c was modeled as a continuous variable, whereas diabetes status was modeled as a categorical variable (yes, no, borderline).",
+         locations = cells_column_labels(columns = "Glycemic")
+      ) %>%
+      tab_footnote(
+         footnote = "Model adjusted for age (continuous), sex (male, female), race/ethnicity (Non-Hispanic White, Non-Hispanic Black, other racial groups), marital status (never married, married/living with partner, widowed/divorced/separated), education (< or ≥12th grade), IPR (continuous), and insurance status (yes/no) plus adiposity,	renal, and glycemic variables.",
+         locations = cells_column_labels(columns = "Model")
+      ) 
+}
+
+# Apply function on SBP outcome
+Alt_SBP <- Alter_mod_tab("SBP") %>%
+   tab_header(
+      title = md(
+         "Table 5: Comparison between alternative model specifications for SBP"
+      )
+   ) 
+
+# Apply function on DBP outcome
+Alt_DBP <- Alter_mod_tab("DBP") %>%
+   tab_header(
+      title = md(
+         "Table 6: Comparison between alternative model specifications for DBP"
+      )
+   ) 
+
+## ==== Basic vs primary vs extended models ====
+Coef_comp_tab <- function(BP, Adiposity, Renal){
+   
+   # Renal log variable
+   Renal_log <- paste0(Renal, "_log")
+   
+   # Basic model
+   Basic_vars <- c(
+      "Sex", "Race_new", "Marital_status", "Education_new",  "Insurance",
+      "Age", "IPR"
+   )
+   
+   Basic_Mod <- svyglm(
+      reformulate(Basic_vars, response = paste0(BP, "_avg")),
+      design = MultiM_design
+   )
+   
+   # Primary model
+   Primary_vars <- c(
+      Basic_vars, Adiposity , Renal_log, "HbA1c"
+   )
+   
+   Primary_Mod <- svyglm(
+      reformulate(Primary_vars, response = paste0(BP, "_avg")),
+      design = MultiM_design
+   )
+   
+   # Extended model for pulse rate
+   Pulse_vars <- c(
+      Primary_vars, "Pulse_avg"
+   )
+   
+   Pulse_Mod <- svyglm(
+      reformulate(Pulse_vars, response = paste0(BP, "_avg")),
+      design = MultiM_design
+   )
+   
+   # Format B (95% CI) + stars
+   Format_coef <- function(model, variable) {
+      
+      Beta <- coef(model)[variable]
+      
+      CI <- confint(model)[variable, ]
+      
+      P <- coef(summary(model))[variable, 4]
+      
+      Stars <- case_when(
+         P < 0.001 ~ "***",
+         P < 0.01  ~ "**",
+         P < 0.05  ~ "*",
+         TRUE      ~ ""
+      )
+      
+      sprintf(
+         "%.3f (%.3f - %.3f)%s",
+         Beta,
+         CI[1],
+         CI[2],
+         Stars
+      )
+   }
+   
+   # Return results as table
+   table <- tibble(
+      Variable = c(
+         "Sex", 
+         "Male",
+         "Female", 
+         "Race/ethnicity", 
+         "Non-Hispanic White",
+         "Non-Hispanic Black", 
+         "Other Racial Groups",
+         "Marital status", 
+         "Never married", 
+         "Married/Living with partner", 
+         "Widowed/Divorced/Separated", 
+         "Education",
+         "12th grade or Less",
+         "High school graduate/GED or above",
+         "Insurance", 
+         "Not-covered", 
+         "Covered",
+         "Age", 
+         "IPR", 
+         Adiposity, 
+         Renal,
+         "HbA1c",
+         "Mean Pulse rate"
+      ),
+      
+      Basic = c(
+         
+         # Sex
+         "",
+         "Ref",
+         Format_coef(Basic_Mod, "SexFemale"),
+         
+         # Race
+         "", 
+         "Ref",
+         Format_coef(Basic_Mod, "Race_newNon Hispanic Black"),
+         Format_coef(Basic_Mod, "Race_newOther Racial Groups"),
+         
+         # Marital status
+         "", 
+         "Ref",
+         Format_coef(Basic_Mod, "Marital_statusMarried/Living with partner"),
+         Format_coef(Basic_Mod, "Marital_statusWidowed/Divorced/Separated"),
+         
+         # Education
+         "", 
+         "Ref",
+         Format_coef(Basic_Mod, "Education_newHigh school graduate/GED or above"),
+         
+         # Insurance
+         "", 
+         "Ref",
+         Format_coef(Basic_Mod, "InsuranceCovered"),
+         
+         # Age
+         Format_coef(Basic_Mod, "Age"),
+         
+         # IPR
+         Format_coef(Basic_Mod, "IPR"),
+         
+         # Adiposity
+         "",
+         
+         # Renal
+         "",
+         
+         # HbA1c
+         "",
+         
+         # Pulse rate
+         ""
+      ),
+      
+      Primary = c(
+         
+         # Sex
+         "",
+         "Ref",
+         Format_coef(Primary_Mod, "SexFemale"),
+         
+         # Race
+         "",
+         "Ref",
+         Format_coef(Primary_Mod, "Race_newNon Hispanic Black"),
+         Format_coef(Primary_Mod, "Race_newOther Racial Groups"),
+         
+         # Marital status
+         "",
+         "Ref",
+         Format_coef(Primary_Mod, "Marital_statusMarried/Living with partner"),
+         Format_coef(Primary_Mod, "Marital_statusWidowed/Divorced/Separated"),
+         
+         # Education
+         "",
+         "Ref",
+         Format_coef(Primary_Mod, "Education_newHigh school graduate/GED or above"),
+         
+         # Insurance
+         "",
+         "Ref",
+         Format_coef(Primary_Mod, "InsuranceCovered"),
+         
+         # Age
+         Format_coef(Primary_Mod, "Age"),
+         
+         # IPR
+         Format_coef(Primary_Mod, "IPR"),
+         
+         # Adiposity
+         Format_coef(Primary_Mod, Adiposity),
+         
+         # Renal
+         Format_coef(Primary_Mod, Renal_log),
+         
+         # HbA1c
+         Format_coef(Primary_Mod, "HbA1c"),
+         
+         # Pulse rate
+         ""
+      ),
+      
+      Pulse_Extended = c(
+         
+         # Sex
+         "",
+         "Ref",
+         Format_coef(Pulse_Mod, "SexFemale"),
+         
+         # Race
+         "",
+         "Ref",
+         Format_coef(Pulse_Mod, "Race_newNon Hispanic Black"),
+         Format_coef(Pulse_Mod, "Race_newOther Racial Groups"),
+         
+         # Marital status
+         "",
+         "Ref",
+         Format_coef(Pulse_Mod, "Marital_statusMarried/Living with partner"),
+         Format_coef(Pulse_Mod, "Marital_statusWidowed/Divorced/Separated"),
+         
+         # Education
+         "",
+         "Ref",
+         Format_coef(Pulse_Mod, "Education_newHigh school graduate/GED or above"),
+         
+         # Insurance
+         "",
+         "Ref",
+         Format_coef(Pulse_Mod, "InsuranceCovered"),
+         
+         # Age
+         Format_coef(Pulse_Mod, "Age"),
+         
+         # IPR
+         Format_coef(Pulse_Mod, "IPR"),
+         
+         # Adiposity
+         Format_coef(Pulse_Mod, Adiposity),
+         
+         # Renal
+         Format_coef(Pulse_Mod, Renal_log),
+         
+         # HbA1c
+         Format_coef(Pulse_Mod, "HbA1c"),
+         
+         # Pulse rate
+         Format_coef(Pulse_Mod, "Pulse_avg")
+      )
+   )
+   
+   # Return table in a tidy way
+   table %>%
+      gt() %>% 
+      tab_style(
+         style = cell_text(indent = px(15)),
+         locations = cells_body(
+            columns = Variable,
+            rows = Variable %in% c(
+               "Male",
+               "Female",
+               "Non-Hispanic White",
+               "Non-Hispanic Black",
+               "Other Racial Groups",
+               "Never married",
+               "Married/Living with partner",
+               "Widowed/Divorced/Separated",
+               "12th grade or Less",
+               "High school graduate/GED or above",
+               "Not-covered",
+               "Covered"
+            )
+         )
+      ) %>%
+      cols_label(
+         Variable = "Variable",
+         Basic = "Basic model: B (95% CI)",
+         Primary = "Primary model: B (95% CI)",
+         Pulse_Extended = "Pulse model: B (95% CI)"
+      ) %>%
+      cols_align(
+         align = "center",
+         columns = c(
+            Basic,
+            Primary,
+            Pulse_Extended
+         )
+      ) %>%
+      sub_missing(
+         columns = c(Basic, Primary, Pulse_Extended),
+         missing_text = ""
+      ) %>%
+      text_transform(
+         locations = cells_body(
+            columns = Basic,
+            rows = Variable %in% c(Adiposity, Renal, "HbA1c")
+         ),
+         fn = function(x) {
+            "—"
+         }
+      ) %>%
+      text_transform(
+         locations = cells_body(
+            columns = c(
+               Basic,
+               Primary
+            ),
+            rows = Variable %in% "Mean Pulse rate"
+         ),
+         fn = function(x) {
+            "—"
+         }
+      ) %>%
+      tab_style(
+         style = cell_borders(
+            sides = "right",
+            color = "grey60",
+            weight = px(2)
+         ),
+         locations = cells_body(
+            columns = c(
+               Variable,
+               Basic, 
+               Primary, 
+               Pulse_Extended
+            )
+         )
+      ) %>%
+      tab_style(
+         style = cell_borders(
+            sides = "right",
+            color = "grey60",
+            weight = px(2)
+         ),
+         locations = cells_column_labels(
+            columns = c(
+               Variable,
+               Basic, 
+               Primary, 
+               Pulse_Extended
+            )
+         )
+      ) %>%
+      tab_style(
+         style = cell_borders(
+            sides = c("bottom", "left", "right"),
+            color = "transparent",
+            weight = px(0)
+         ),
+         locations = cells_body(
+            rows = Variable %in% c(
+               "Sex",
+               "Race/ethnicity",
+               "Marital status",
+               "Education",
+               "Insurance"
+            )
+         )
+      ) %>%
+      tab_footnote(
+         footnote = "Model adjusted for age (continuous), sex (male, female), race/ethnicity (Non-Hispanic White, Non-Hispanic Black, other racial groups), marital status (never married, married/living with partner, widowed/divorced/separated), education (< or ≥12th grade), IPR (continuous), and insurance status (yes/no).",
+         cells_column_labels(columns = "Basic")
+      ) %>%
+      tab_footnote(
+         footnote = paste0(
+            "Model adjusted for all variables in the basic model plus, ", Adiposity," (continuous), ", Renal, " (continuous), and HbA1c (continuous)."
+         ),
+         cells_column_labels(columns = "Primary")
+      ) %>%
+      tab_footnote(
+         footnote = "Model adjusted for all variables in the primary model plus mean pulse rate.",
+         cells_column_labels(columns = "Pulse_Extended")
+      ) %>%
+      tab_footnote(
+         footnote = paste0(
+            Renal, " was log-transformed before analysis."
+         ),
+         locations = cells_body(columns = "Variable", rows = 21)
+      ) %>%
+      tab_source_note(
+         source_note = md(
+            c(
+               "All estimates are survey-weighted.",
+               "P-values were obtained using survey-weighted Wald tests:",
+               "∗ p < 0.05.",
+               "∗∗ p < 0.01.",
+               "∗∗∗ p < 0.001"
+            )
+         )
+      )
+}
+
+# Apply function on SBP outcome
+MBP_SBP <- Coef_comp_tab("SBP", "WC", "ACR") %>%
+   tab_header(
+      title = md(
+         "Table 7: Comparison of adjusted associations across sequential multivariable regression models for SBP"
+      )
+   )
+
+# Apply function on DBP outcome
+MBP_DBP <- Coef_comp_tab("DBP", "BMI", "eGFR") %>%
+   tab_header(
+      title = md(
+         "Table 8: Comparison of adjusted associations across sequential multivariable regression models for DBP"
+      )
+   ) 
+```
+
+```{r}
+#| echo: false
+
+Alt_SBP
+```
+
+```{r}
+#| echo: false
+
+Alt_DBP
+```
+
+#### 3.3.2 SBP final model
+
+In the fully adjusted model, female sex was associated with lower SBP compared with male sex (β = -6.10 mmHg, 95% CI: -8.73 to -3.47, p = 0.01). Compared with non-Hispanic White adults, non-Hispanic Black adults had higher SBP (β = 4.21 mmHg, 95% CI: 0.22 - 8.20, p = 0.045).
+
+Age was positively associated with SBP (β = 0.35 mmHg per year, 95% CI: 0.25 - 0.45, p = 0.005). Higher log-transformed ACR was also associated with higher SBP (β = 4.70, 95% CI: 0.53 - 8.88, p = 0.040).
+
+No statistically significant associations were observed for the rest covariates, including WC (β = 0.02 mmHg per unit, p = 0.291), HbA1c (β = 0.28, p = 0.521), mean pulse rate (β = 0.02 mmHg per beat/min, p = 0.521), IPR (p = 0.236), education (p = 0.969), insurance status (p = 0.986), marital status (p ≥ 0.142), or the other racial-group category (p = 0.501).
+
+Heart rate was subsequently added to the primary model. In the resulting extended survey-weighted model, the maximum VIF was 4.42, and deviance was 953,004.3, representing a modest reduction in deviance relative to the primary model. However, it did not change the direction of the principal associations observed in the primary model. All coefficients remained broadly similar after its inclusion.
+
+#### 3.3.3 DBP final model
+
+The pattern of associations for DBP differed from that observed for SBP. In the extended DBP model, female sex was associated with lower DBP compared with male sex (β = -3.12 mmHg, 95% CI: -5.14 to -1.10, p = 0.22). Non-Hispanic Black adults had higher DBP than non-Hispanic White adults (β = 3.74 mmHg, 95% CI: 0.99 - 6.50, p = 0.028).
+
+BMI was positively associated with DBP. Each one-unit increase in BMI was associated with a 0.31 mmHg higher DBP (95% CI: 0.19 - 0.44, p = 0.009). Mean pulse rate was also positively associated with DBP, with each additional beat per minute associated with a 0.26 mmHg higher DBP (95% CI: 0.18 - 0.33, p = 0.004).
+
+Age was not statistically significantly associated with DBP after multivariable adjustment (β = 0.05, p = 0.104). Likewise, log-transformed eGFR (β = 2.98, p = 0.255) and HbA1c (β = 0.013, p = 0.971) were not significantly associated with DBP in the extended model. No statistically significant associations were observed for IRP (p = 0.408), education (p = 0.556), insurance status (p = 0.863), marital status (p ≥ 0.079), or the other racial-group category (p = 0.684).
+
+The extended survey-weighted model had a maximum VIF equal to 6.22, and deviance was 419,204.3, representing a reduction in deviance relative to the primary model but maximum VIF was dramatically increased. The pulse rate addition also changed the magnitude of the principal associations observed in the primary model.
+
+Overall, the adjusted associations differed between SBP and DBP. Age and log-transformed ACR were associated with SBP but not DBP, whereas BMI and pulse rate were associated with DBP but not SBP. The direction and significance of the sex and race/ethnicity associations were broadly consistent across both outcomes.
+
+```{r}
+#| echo: false
+
+MBP_SBP
+```
+
+```{r}
+#| echo: false
+
+MBP_DBP
+```
+
+### 3.4 Prediction models
+
+#### 3.4.1 Development and comparison of SBP and DBP predictive models
+
+For SBP, ordinary linear regression achieved an RMSE of 15.525 mmHg, MAE of 11.747 mmHg, and R2 of 0.222 (Table 10). The penalized models produced very similar results. Ridge regression achieved an RMSE of 15.522 mmHg, MAE of 11.741 mmHg, and R2 of 0.223. Lasso regression achieved the lowest RMSE (15.516 mmHg) and MAE (11.734 mmHg), with an R2 of 0.223. Elastic Net regression, with a mixture parameter of 0.90 and penalty of 0.0954, had an RMSE of 15.516 mmHg, MAE of 11.735 mmHg, and R2 of 0.223. The final SBP model achieved a test-set RMSE of 15.284 mmHg, MAE of 11.621 mmHg, and R2 of 0.212 (Table 11).
+
+For DBP, ordinary linear regression produced an RMSE of 9.928 mmHg, MAE of 7.657 mmHg, and R2 of 0.156. Ridge regression achieved the lowest RMSE (9.925 mmHg), with an MAE of 7.658 mmHg and R2 of 0.156. Lasso regression yielded an RMSE of 9.928 mmHg, MAE of 7.662 mmHg, and R2 of 0.155. Elastic Net regression, with a mixture parameter of 0.10 and penalty of 0.2442, achieved an RMSE of 9.927 mmHg, MAE of 7.661 mmHg, and R2 of 0.156. The final DBP model achieved a test-set RMSE of 9.673 mmHg, MAE of 7.602 mmHg, and R2 of 0.177.
+
+```{r}
+#| include: false
+
+# ==== Prediction model ====
+
+# Build a function to choose best model and select/investigate final model
+BP_Model <- function(Outcome, BP_label) {
+   
+   ## ==== 1. Split data into train and test ====
+   
+   set.seed(1234)
+   
+   Split <- initial_split(
+      Data, 
+      prop = 0.8, 
+      strata = !!sym(Outcome)
+   )
+   
+   Train <- training(Split)
+   Test  <- testing (Split)
+   
+   ## ==== 2. Create a recipe ====
+   
+   # Define variables
+   
+   Variables <- c( 
+      "Age", "Sex", "Race", "Marital_status", "Education", "IPR", "Insurance", 
+      "BMI", "WC", "ACR_log", "eGFR_log", "Diabetes", "HbA1c", "Taking_BP_meds",
+      "Pulse_avg"
+   )
+   
+   # Create a formula 
+   BP_formula <- reformulate(
+      termlabels = Variables,
+      response = Outcome
+   )
+   
+   # Create a recipe
+   BP_recipe <- recipe(
+      BP_formula,
+      data = Train
+   ) %>%
+      step_zv(all_predictors()) %>%                 # Removes zero-variance predictors
+      step_dummy(all_nominal_predictors()) %>%      # Convert categorical predictors into dummy 
+      step_normalize(all_numeric_predictors())      # Standardize every numeric predictor
+   
+   ## ==== 3. Create 10-fold cross-validation ====
+   Folds <- vfold_cv(
+      Train,
+      v = 10,
+      repeats = 5,
+      strata = !!sym(Outcome)
+   )
+   
+   ## ==== 4. Create models ====
+   
+   ## Ordinary linear regression
+   LM_spec <- linear_reg() %>%
+      set_engine("lm")
+   
+   ## Penalized regression
+   P_model <- linear_reg (
+      penalty = tune(), 
+      mixture = tune()
+   ) %>%
+      set_engine (engine = "glmnet") 
+   
+   ## ==== 5. Create workflows ====
+   
+   # Ordinary linear regression
+   LM_WF <- workflow() %>%
+      add_recipe(BP_recipe) %>%
+      add_model(LM_spec)
+   
+   # Penalized regression
+   P_WF <- workflow() %>% 
+      add_recipe (BP_recipe) %>% 
+      add_model(P_model)
+   
+   ## ==== 6. Create tuning grid ====
+   Penalty_grid <- grid_regular(
+      penalty(),
+      mixture(range = c(0, 1)),  # Contains Ridge and Lasso regressions
+      levels = c(50, 11)
+   )
+   
+   ## ==== 7. Fit models ====
+   
+   # Ordinary linear regression
+   LM_results <- fit_resamples(
+      LM_WF,
+      resamples = Folds,
+      metrics = metric_set(rmse, mae, rsq),
+      control = control_resamples(
+         save_pred = TRUE
+      )
+   )
+   
+   # Penalized regression
+   P_results <- tune_grid (
+      P_WF, 
+      resamples = Folds, 
+      grid = Penalty_grid,
+      metrics = metric_set(rmse, mae, rsq),
+      control = control_grid(
+         save_pred = TRUE
+      )
+   )
+   
+   ## ==== 8. Collect model results ====
+   
+   # Ordinary linear regression
+   Best_LM <- collect_metrics(LM_results) 
+   
+   # Penalized regression
+   P_metrics <- collect_metrics(P_results)
+   
+   ## ==== 9. Choose best penalty for each model ====
+   
+   # Ridge model
+   Best_Ridge <- P_metrics %>%
+      filter(
+         .metric == "rmse",
+         mixture == 0
+      ) %>%
+      slice_min(
+         order_by = mean,
+         n = 1,
+         with_ties = FALSE
+      )
+   
+   # Lasso model
+   Best_Lasso <- P_metrics %>%
+      filter(
+         .metric == "rmse",
+         mixture == 1
+      ) %>%
+      slice_min(
+         order_by = mean,
+         n = 1,
+         with_ties = FALSE
+      )
+   
+   # Elastic Net model
+   Best_El <- P_metrics %>%
+      filter(
+         .metric == "rmse",
+         mixture > 0,
+         mixture < 1
+      ) %>%
+      slice_min(
+         order_by = mean,
+         n = 1,
+         with_ties = FALSE
+      )
+   
+   ## ==== 10. Create comparison table ====
+   
+   ## Ordinary linear regression
+   LM_summary <- Best_LM %>%
+      select(.metric, mean, std_err) %>%
+      mutate(
+         Model = "Ordinary linear regression",
+         Mixture = NA_real_,
+         Penalty = NA_real_
+      )
+   
+   ## Ridge model
+   Ridge_summary <- P_metrics %>%
+      filter(.config == Best_Ridge$.config) %>%
+      select(.metric, mean, std_err) %>%
+      mutate(
+         Model = "Ridge",
+         Mixture = 0,
+         Penalty = Best_Ridge$penalty
+      )
+   
+   ## Lasso model
+   Lasso_summary <- P_metrics %>%
+      filter(.config == Best_Lasso$.config) %>%
+      select(.metric, mean, std_err) %>%
+      mutate(
+         Model = "Lasso",
+         Mixture = 1,
+         Penalty = Best_Lasso$penalty
+      )
+   
+   ## Elastic Net model
+   El_summary <- P_metrics %>%
+      filter(.config == Best_El$.config) %>%
+      select(.metric, mean, std_err) %>%
+      mutate(
+         Model = "Elastic Net",
+         Mixture = Best_El$mixture,
+         Penalty = Best_El$penalty
+      )
+   
+   ## Combine results in a tidy table
+   Train_table <- bind_rows(
+      LM_summary,
+      Ridge_summary,
+      Lasso_summary,
+      El_summary
+   ) %>%
+      pivot_wider(
+         names_from = .metric,
+         values_from = c(mean, std_err)
+      ) %>%
+      mutate(
+         Outcome = BP_label,
+         Mixture = ifelse(
+            is.na(Mixture),
+            "—",
+            sprintf("%.2f", Mixture)
+         ),
+         Penalty = ifelse(
+            is.na(Penalty),
+            "—",
+            sprintf("%.4f", Penalty)
+         ),
+         RMSE = sprintf("%.4f", mean_rmse),
+         MAE  = sprintf("%.4f", mean_mae),
+         R2   = sprintf("%.4f", mean_rsq)
+      ) %>%
+      select(
+         Outcome,
+         Model,
+         Mixture,
+         Penalty,
+         RMSE,
+         MAE,
+         R2
+      )
+   
+   ## ==== 11. Select overall best penalized model ====
+   
+   Best_GLMNET <- select_best(
+      P_results,
+      metric = "rmse"
+   )
+   
+   ## ==== 12. Tuning plot ====
+   
+   Tuning_RMSE <- P_metrics %>%
+      filter(.metric == "rmse")
+   
+   Tuning_plot <- ggplot(
+      Tuning_RMSE,
+      aes(
+         x = penalty,
+         y = mean,
+         group = factor(mixture),
+         color = factor(mixture)
+      )
+   ) +
+      geom_line() +
+      geom_point(size = 1.3) +
+      geom_point(
+         data = Tuning_RMSE %>%
+            filter(
+               mixture == Best_GLMNET$mixture,
+               penalty == Best_GLMNET$penalty
+            ),
+         aes(x = penalty, y = mean),
+         size = 4,
+         inherit.aes = FALSE
+      ) +
+      scale_x_log10() +
+      labs(
+         x = "Penalty (log scale)",
+         y = "Mean cross-validated RMSE",
+         color = "Lasso proportion",
+         title = paste0("Hyperparameter tuning of", BP_label, "penalized regression models")
+      ) 
+   
+   ## ==== 13. Select the final predictive model ====
+   Final_WF <- finalize_workflow(
+      P_WF, 
+      Best_GLMNET
+   )
+   
+   ## ==== 14. Fit the final predictive model ====
+   Final_fit <- last_fit(
+      Final_WF,
+      split = Split,
+      metrics = metric_set(
+         rmse, 
+         mae, 
+         rsq
+      )
+   )
+   
+   # Final test performance
+   Final_test_metrics <- collect_metrics(Final_fit) %>%
+      pivot_wider(
+         names_from = .metric,
+         values_from = .estimate
+      ) %>%
+      mutate(
+         Outcome = BP_label
+      ) %>%
+      select(
+         Outcome,
+         rmse,
+         mae,
+         rsq
+      )
+   
+   Final_workflow <- extract_workflow(Final_fit)
+   
+   ## ==== 15. Extract coefficients from the final predictive model ====
+   
+   # Extract coefficients
+   Final_coefficients <- Final_fit %>%
+      extract_fit_parsnip() %>%
+      tidy()
+   
+   Coefficient_table <- tibble(
+      Variable = c(
+         "Sex",
+         "Male",
+         "Female",
+         
+         "Race/ethnicity",
+         "Mexican American",
+         "Non Hispanic White",
+         "Non Hispanic Black",
+         "Non Hispanic Asian",
+         "Other Hispanic",
+         "Other Race",
+         
+         "Marital status",
+         "Never married",
+         "Married/Living with partner",
+         "Widowed/Divorced/Separated",
+         
+         "Education",
+         "Less than 9th grade",
+         "9–11th grade (includes 12th grade with no diploma)",
+         "High school graduate/GED or equivalent",
+         "Some college or AA degree",
+         "College graduate or above",
+         
+         "Insurance",
+         "Not covered",
+         "Covered",
+         
+         "Age",
+         "IPR",
+         "BMI",
+         "WC",
+         "eGFR",
+         "ACR",
+         "Mean Pulse rate",
+         "HbA1c",
+         
+         "Diabetes",
+         "No",
+         "Yes",
+         "Borderline",
+         
+         "BP-lowering medications",
+         "Not diagnosed",
+         "Not taking",
+         "Taking"
+      ),
+      Estimate = c(
+         NA,
+         0,
+         Final_coefficients$estimate[Final_coefficients$term == "Sex_Female"],
+         
+         NA,
+         0,
+         Final_coefficients$estimate[Final_coefficients$term == "Race_Non.Hispanic.White"],
+         Final_coefficients$estimate[Final_coefficients$term == "Race_Non.Hispanic.Black"],
+         Final_coefficients$estimate[Final_coefficients$term == "Race_Non.Hispanic.Asian"],
+         Final_coefficients$estimate[Final_coefficients$term == "Race_Other.Hispanic"],
+         Final_coefficients$estimate[Final_coefficients$term == "Race_Other.Race"],
+         
+         NA,
+         0,
+         Final_coefficients$estimate[
+            Final_coefficients$term == "Marital_status_Married.Living.with.partner"
+         ],
+         Final_coefficients$estimate[
+            Final_coefficients$term == "Marital_status_Widowed.Divorced.Separated"
+         ],
+         
+         NA,
+         0,
+         Final_coefficients$estimate[
+            Final_coefficients$term ==
+               "Education_X9.11th.grade..Includes.12th.grade.with.no.diploma."
+         ],
+         Final_coefficients$estimate[
+            Final_coefficients$term ==
+               "Education_High.school.graduate.GED.or.equivalent"
+         ],
+         Final_coefficients$estimate[
+            Final_coefficients$term ==
+               "Education_Some.college.or.AA.degree"
+         ],
+         Final_coefficients$estimate[
+            Final_coefficients$term ==
+               "Education_College.graduate.or.above"
+         ],
+         
+         NA,
+         0,
+         Final_coefficients$estimate[
+            Final_coefficients$term == "Insurance_Covered"
+         ],
+         
+         Final_coefficients$estimate[Final_coefficients$term == "Age"],
+         Final_coefficients$estimate[Final_coefficients$term == "IPR"],
+         Final_coefficients$estimate[Final_coefficients$term == "BMI"],
+         Final_coefficients$estimate[Final_coefficients$term == "WC"],
+         Final_coefficients$estimate[Final_coefficients$term == "eGFR_log"],
+         Final_coefficients$estimate[Final_coefficients$term == "ACR_log"],
+         Final_coefficients$estimate[Final_coefficients$term == "Pulse_avg"],
+         Final_coefficients$estimate[Final_coefficients$term == "HbA1c"],
+         
+         NA,
+         0,
+         Final_coefficients$estimate[
+            Final_coefficients$term == "Diabetes_Yes"
+         ],
+         Final_coefficients$estimate[
+            Final_coefficients$term == "Diabetes_Borderline"
+         ],
+         
+         NA,
+         0,
+         Final_coefficients$estimate[
+            Final_coefficients$term == "Taking_BP_meds_Not.taking"
+         ],
+         Final_coefficients$estimate[
+            Final_coefficients$term == "Taking_BP_meds_Taking"
+         ]
+      )
+   ) %>%
+      mutate(
+         Estimate = round(Estimate, 3)
+      ) %>% 
+      gt() %>%
+      text_transform(
+         locations = cells_body(
+            columns = Estimate,
+            rows = Variable %in% c("Sex", "Race/ethnicity", "Marital status", "Education", "Insurance", "Diabetes", "BP-lowering medications")
+         ),
+         fn = function(x) {
+            ""
+         }
+      ) %>% 
+      text_transform(
+         locations = cells_body(
+            columns = Estimate,
+            rows = Variable %in% c("Male", "Mexican American", "Never married", "Less than 9th grade", "Not covered", "No", "Not diagnosed")
+         ),
+         fn = function(x) {
+            "Ref"
+         }
+      )
+   
+   # Final model diagnostic data
+   Final_train_predictions <- predict(
+      Final_workflow,
+      new_data = Train
+   ) %>%
+      bind_cols(
+         Train %>% select(all_of(Outcome))
+      ) %>%
+      rename(
+         Observed = all_of(Outcome),
+         Predicted = .pred
+      ) %>%
+      mutate(
+         Residual = Observed - Predicted,
+         Standardized_Residual = Residual / sd(Residual, na.rm = TRUE)
+      ) 
+   
+   ## ==== 16. Diagnostic plots ====
+   
+   ### ==== Plot 1: Residuals vs fitted values ====
+   
+   Diagnostic_residuals <- ggplot(
+      Final_train_predictions,
+      aes(
+         Predicted, 
+         Residual)
+   )  +
+      geom_point(
+         color = "#ff9800",
+         alpha = 0.35
+      ) +
+      geom_smooth(
+         method = "loess",
+         se = TRUE
+      ) +
+      geom_hline(
+         yintercept = 0,
+         linetype = "dashed"
+      ) +
+      labs(
+         x = "Fitted values (mmHg)",
+         y = "Residuals (mmHg)",
+         title = "Residuals versus fitted values"
+      )
+   
+   ### ==== Plot 2: Normal Q-Q plot ====
+   
+   Diagnostic_QQ <- ggplot(
+      Final_train_predictions,
+      aes(
+         sample = Residual
+      )
+   ) +
+      stat_qq() +
+      stat_qq_line() +
+      labs(
+         x = "Theoretical quantiles",
+         y = "Standardized residuals",
+         title = "Q-Q plot"
+      )
+   
+   ### ==== Plot 3: Scale-location plot ====
+   
+   Diagnostic_scale <- ggplot(
+      Final_train_predictions,
+      aes(
+         x = Predicted,
+         y = sqrt(abs(Standardized_Residual))
+      )
+   ) +
+      geom_point(
+         color = "orange",
+         alpha = 0.35
+      ) +
+      geom_smooth(
+         method = "loess",
+         se = TRUE
+      ) +
+      labs(
+         x = "Fitted values (mmHg)",
+         y = expression(sqrt("|Standardized residuals|")),
+         title = "Scale-location"
+      )
+   
+   ### ==== Plot 4: Residual histogram ====
+   
+   Diagnostic_residual_histogram <- ggplot(
+      Final_train_predictions,
+      aes(x = Residual)
+   ) +
+      geom_histogram(
+         aes(y = after_stat(density)),
+         bins = 30
+      ) +
+      geom_density() +
+      geom_vline(
+         xintercept = 0,
+         linetype = "dashed"
+      ) +
+      labs(
+         x = "Residual",
+         y = "Density",
+         title = "Residual Distribution"
+      ) 
+   
+   ### ==== Combine four diagnostic plots ====
+   
+   Diagnostic_plots <- (
+      Diagnostic_residuals +
+         Diagnostic_QQ +
+         Diagnostic_scale +
+         Diagnostic_residual_histogram
+   ) 
+   
+   ## ==== 17. Get results of train and test data ====
+   
+   # Cross-validation predictions
+   CV_predictions <- collect_predictions(P_results) %>%
+      filter(
+         .config == Best_GLMNET$.config
+      )
+   
+   CV_predictions_mean <- CV_predictions %>%
+      group_by(.row) %>%
+      summarise(
+         Observed = first(.data[[Outcome]]),
+         Predicted = mean(.pred, na.rm = TRUE),
+         .groups = "drop"
+      ) %>%
+      mutate(
+         Residual = Observed - Predicted,
+         Dataset = "Cross-validation"
+      )
+   
+   # Held-out test results
+   Test_predictions <- Test %>%
+      bind_cols(
+         predict(
+            Final_workflow,
+            new_data = Test
+         )
+      ) %>%
+      rename(
+         Observed = .data[[Outcome]],
+         Predicted = .pred,
+      ) %>%
+      mutate(
+         Residual = Observed - Predicted,
+         Dataset = "Held-out test"
+      )
+   
+   # Combine test and train data
+   Prediction_plot_data <- bind_rows(
+      CV_predictions_mean,
+      Test_predictions
+   )
+   
+   ## ==== 18. Observed vs predicted plot for CV ====
+   
+   Prediction_plot <- ggplot(
+      Prediction_plot_data,
+      aes(
+         x = Observed,
+         y = Predicted
+      )
+   ) +
+      geom_point(
+         color = "orange",
+         alpha = 0.35
+      ) +
+      geom_abline(
+         slope = 1,
+         intercept = 0,
+         linetype = "dashed"
+      ) +
+      facet_wrap(
+         ~ Dataset,
+         ncol = 2
+      ) +
+      coord_equal() +
+      labs(
+         x = paste("Observed", BP_label, "(mmHg)"),
+         y = paste("Predicted", BP_label, "(mmHg)"),
+         title = paste(
+            "Observed versus predicted",
+            BP_label
+         ),
+         subtitle = "Cross-validated predictions versus held-out test predictions"
+      )
+   
+   ## ==== 19. Categorical subgroup performance ====
+   
+   # Create a function to return a table with RMSE, MAE, R2, and mean error
+   Cate_Subgroup_table <- function(vars){
+      
+      # Create an empty table
+      tab <- tibble()
+      
+      # Create a function to calculate RMSE, MAE, R2, and mean error
+      Categorical_metrics <- function(data) {
+         
+         data %>%
+            summarise(
+               RMSE = sqrt(
+                  mean(Residual^2, na.rm = TRUE)
+               ),
+               
+               MAE = mean(
+                  abs(Residual),
+                  na.rm = TRUE
+               ),
+               
+               Mean_Error = mean(
+                  Residual,
+                  na.rm = TRUE
+               ),
+               
+               R2 = 1 -
+                  sum(
+                     Residual^2,
+                     na.rm = TRUE
+                  ) /
+                  sum(
+                     (
+                        Observed - mean(Observed, na.rm = TRUE)
+                     )^2,
+                     na.rm = TRUE
+                  ),
+               n = n()
+            )
+      }
+      
+      # Apply function for each variable 
+      for(var in vars){
+         
+         result <- Test_predictions %>%
+            group_by(
+               Group = .data[[var]]
+            ) %>%
+            Categorical_metrics() %>%
+            ungroup() %>%
+            mutate(
+               Variable = lookup[[var]],
+               .before = Group
+            )
+         
+         tab <- bind_rows(
+            tab,
+            result
+         )
+      }
+      
+      # Format final table
+      tab <- tab %>%
+         mutate(
+            RMSE = sprintf("%.3f", RMSE),
+            MAE = sprintf("%.3f", MAE),
+            Mean_Error = sprintf("%.3f", Mean_Error),
+            R2 = sprintf("%.3f", R2)
+         ) %>%
+         select(
+            Variable,
+            Group,
+            n,
+            RMSE,
+            MAE,
+            Mean_Error,
+            R2
+         )
+      
+      # Return results
+      tab
+   }
+   
+   # Apply function on categorical variables
+   Cat_sub_tab <- Cate_Subgroup_table(
+      c(
+         "Sex", "Race", "Taking_BP_meds", "Diabetes"
+      )
+   ) 
+   
+   ## ==== 20. Residual analysis for continuous variables ====
+   
+   Plot_residual <- function(vars) {
+      
+      # Apply function for each variable
+      map (
+         vars, 
+         function(var) {
+            
+            ggplot(
+               Test_predictions,
+               aes(
+                  x = .data[[var]],
+                  y = Residual
+               )
+            ) +
+               geom_point(
+                  color = "orange",
+                  alpha = 0.35
+               ) +
+               geom_smooth(
+                  method = "loess",
+                  se = TRUE
+               ) +
+               geom_hline(
+                  yintercept = 0,
+                  linetype = "dashed"
+               ) +
+               labs(
+                  x = lookup[[var]],
+                  y = "Prediction residual (mmHg)"
+               )
+         }
+      )
+   }
+   
+   # Apply function on continuous variables
+   Residual_plots <- wrap_plots(
+      Plot_residual(
+         c(
+            "Age", "BMI", "WC", "ACR_log", "eGFR_log", "HbA1c", "Pulse_avg"
+         )
+      ),
+      ncol = 3
+   ) 
+   
+   ## ====21. Function returns ====
+   list(
+      Best_LM = Best_LM,
+      Best_Ridge = Best_Ridge,
+      Best_Lasso = Best_Lasso,
+      Best_El = Best_El,
+      Best_GLMNET = Best_GLMNET,
+      
+      Train_table = Train_table,
+      Tuning_plot = Tuning_plot,
+      
+      Final_WF = Final_WF,
+      Final_test_metrics = Final_test_metrics,
+      
+      Coefficient_table = Coefficient_table,
+      Prediction_plot = Prediction_plot,
+      Diagnostic_plots = Diagnostic_plots,
+      
+      Cat_sub_tab = Cat_sub_tab,
+      Residual_plots = Residual_plots
+   )
+}
+
+# Apply function
+SBP_Model <- BP_Model("SBP_avg", "SBP")
+
+DBP_Model <- BP_Model("DBP_avg", "DBP")
+
+# Cross-validation performance presentation 
+Train_table2 <- bind_rows(
+   SBP_Model$Train_table, 
+   DBP_Model$Train_table
+) %>%
+   gt(
+      groupname_col = "Outcome",
+      row_group_as_column = TRUE
+   )  %>%
+   tab_header(
+      title = "Table 9: Cross-validation performance of candidate SBP and DBP predictive models"
+   ) %>%
+   tab_source_note(
+      source_note = md("Values are based on the reported repeated cross-validation results.")
+   )
+
+# Overall test-set metrics
+Final_test_metrics2 <- bind_rows(
+   SBP_Model$Final_test_metrics, 
+   DBP_Model$Final_test_metrics
+) %>%
+   gt() %>%
+   cols_label(
+      rmse    = "RMSE",
+      mae    = "MAE",
+      rsq = "R2"
+   ) %>%
+   fmt_number(
+      columns = c(rmse, mae, rsq),
+      decimals = 4
+   ) %>%
+   tab_header(
+      title = "Table 10: Overall test-set metrics performance of final SBP and DBP predictive models"
+   ) %>%
+   tab_source_note(
+      source_note = md("Final model selected: Lasso for SBP prediction and Ridge for DBP prediction. Metrics were calculated using the held-out test set.")
+   )
+
+# Coefficients tables presentation 
+SBP_Model$Coefficient_table <- SBP_Model$Coefficient_table %>%
+   tab_style(
+      style = cell_text(indent = px(15)),
+      locations = cells_body(
+         columns = Variable,
+         rows = Variable %in% c(
+            "Male",
+            "Female",
+            "Mexican American",
+            "Non Hispanic White",
+            "Non Hispanic Black",
+            "Non Hispanic Asian",
+            "Other Hispanic",
+            "Other Race",
+            "Never married",
+            "Married/Living with partner",
+            "Widowed/Divorced/Separated",
+            "Less than 9th grade",
+            "9–11th grade (includes 12th grade with no diploma)",
+            "High school graduate/GED or equivalent",
+            "Some college or AA degree",
+            "College graduate or above",
+            "Not covered",
+            "Covered",
+            "No",
+            "Yes",
+            "Borderline",
+            "Not diagnosed",
+            "Not taking",
+            "Taking"
+         )
+      )
+   ) %>% 
+   tab_header(
+      title = "Table 11: Coefficients for SBP final prediction model"
+   ) %>%
+   tab_footnote(
+      footnote = "eGFR was log-transformed before analysis.",
+      locations = cells_body(columns = "Variable", rows = 28)
+   ) %>%
+   tab_footnote(
+      footnote = "ACR was log-transformed before analysis.",
+      locations = cells_body(columns = "Variable", rows = 29)
+   )
+
+DBP_Model$Coefficient_table <- DBP_Model$Coefficient_table %>% 
+   tab_style(
+      style = cell_text(indent = px(15)),
+      locations = cells_body(
+         columns = Variable,
+         rows = Variable %in% c(
+            "Male",
+            "Female",
+            "Mexican American",
+            "Non Hispanic White",
+            "Non Hispanic Black",
+            "Non Hispanic Asian",
+            "Other Hispanic",
+            "Other Race",
+            "Never married",
+            "Married/Living with partner",
+            "Widowed/Divorced/Separated",
+            "Less than 9th grade",
+            "9–11th grade (includes 12th grade with no diploma)",
+            "High school graduate/GED or equivalent",
+            "Some college or AA degree",
+            "College graduate or above",
+            "Not covered",
+            "Covered",
+            "No",
+            "Yes",
+            "Borderline",
+            "Not diagnosed",
+            "Not taking",
+            "Taking"
+         )
+      )
+   )  %>% 
+   tab_header(
+      title = "Table 12: Coefficients for DBP final prediction model"
+   ) %>%
+   tab_footnote(
+      footnote = "eGFR was log-transformed before analysis.",
+      locations = cells_body(columns = "Variable", rows = 28)
+   ) %>%
+   tab_footnote(
+      footnote = "ACR was log-transformed before analysis.",
+      locations = cells_body(columns = "Variable", rows = 29)
+   )
+
+# Subgroups tables presentation 
+SBP_Model$Cat_sub_tab <- SBP_Model$Cat_sub_tab %>%
+   gt(
+      groupname_col = "Variable"
+   ) %>%
+   cols_label(
+      Variable = "Variable",
+      Group = "Subgroup",
+      n = "N",
+      RMSE = "RMSE (mmHg)",
+      MAE = "MAE (mmHg)",
+      Mean_Error = "Mean error (mmHg)",
+      R2 = "R²"
+   ) %>%
+   cols_align(
+      align = "left",
+      columns = Group
+   ) %>%
+   tab_options(
+      row_group.as_column = TRUE
+   ) %>%
+   tab_header(
+      title = "Table 13: Predictive performance across prespecified SBP subgroups"
+   )
+
+DBP_Model$Cat_sub_tab <- DBP_Model$Cat_sub_tab %>%
+   gt(
+      groupname_col = "Variable"
+   ) %>%
+   cols_label(
+      Variable = "Variable",
+      Group = "Subgroup",
+      n = "N",
+      RMSE = "RMSE (mmHg)",
+      MAE = "MAE (mmHg)",
+      Mean_Error = "Mean error (mmHg)",
+      R2 = "R²"
+   ) %>%
+   cols_align(
+      align = "left",
+      columns = Group
+   ) %>%
+   tab_options(
+      row_group.as_column = TRUE
+   ) %>%
+   tab_header(
+      title = "Table 14: Predictive performance across prespecified DBP subgroups"
+   )
+```
+
+```{r}
+#| echo: false
+
+Train_table2
+```
+
+```{r}
+#| echo: false
+
+Final_test_metrics2
+```
+
+The differences in predictive performance between the candidate models were negligible for both outcomes. The improvement in RMSE compared with ordinary linear regression was approximately 0.009 mmHg for SBP and 0.003 mmHg for DBP. These differences indicate that regularization provided little practical improvement in predictive accuracy for either outcome using the current predictor set. However, lasso model was selected as a final model for SBP, while ridge was selected for DBP. The cross-validation results also showed that the SBP model explained a larger proportion of outcome variability than the DBP model, with R2 values of approximately 0.223 and 0.156, respectively.
+
+#### 3.4.2 Predictive model coefficients
+
+For SBP, the largest positive continuous-predictor coefficients were observed for age (5.076) and log-transformed ACR (2.931) (refer to Table 12). Positive coefficients were also observed for HbA1c (0.867) and log-transformed eGFR (0.743). Negative coefficients were observed for female sex (−2.101), diabetes status classified as yes (−1.503), BMI (−0.175), WC (−0.056), and mean pulse rate (−0.394). The coefficient for non-Hispanic Black participants was positive (1.239), while several other race/ethnicity and education coefficients were shrunk to zero. The BP-lowering medication categories had positive coefficients of 2.554 for participants classified as not taking medication and 2.562 for those taking medication, relative to the reference category of not diagnosed.
+
+```{r}
+#| echo: false
+
+SBP_Model$Coefficient_table
+```
+
+For DBP, female sex had a coefficient of −0.755 relative to males, while the coefficient for non-Hispanic Black participants was 1.138 relative to Mexican American participants (Table 13). Diabetes status classified as yes had a coefficient of −1.696, and the coefficient for participants taking BP-lowering medication was 0.395 relative to those classified as not diagnosed. Mean pulse rate had a positive coefficient of 2.720. Positive coefficients were also observed for WC (1.152), BMI (0.811), log-transformed ACR (0.826), log-transformed eGFR (0.572), HbA1c (0.399), age (0.245), and IPR (0.413).
+
+```{r}
+#| echo: false
+
+DBP_Model$Coefficient_table
+```
+
+#### 3.4.3 Predictive performance across demographic and clinical subgroups
+
+Subgroup analyses of the held-out test predictions showed that prediction error varied across sex, race/ethnicity, BP-lowering medication status, and diabetes status, see Table 14 and Table 15. The SBP subgroup results included 879 participants, whereas the DBP subgroup results included 878 participants.
+
+```{r}
+#| echo: false
+
+SBP_Model$Cat_sub_tab
+```
+
+```{r}
+#| echo: false
+
+DBP_Model$Cat_sub_tab
+
+```
+
+**Sex**
+
+For SBP, prediction performance was similar between males and females in absolute error terms. Males had an RMSE of 15.116 mmHg and MAE of 11.386 mmHg, while females had an RMSE of 15.426 mmHg and MAE of 11.821 mmHg. The corresponding R2 values were 0.068 and 0.286.
+
+For DBP, females had lower prediction errors than males. The RMSE was 9.302 mmHg among females and 10.116 mmHg among males; MAE was 7.384 and 7.873 mmHg, respectively. Their R2 values were 0.176 and 0.172.
+
+Thus, absolute prediction errors were similar between the sexes for both outcomes, although the amount of explained variation differed across sex-specific groups.
+
+**Race and ethnicity**
+
+For SBP, RMSE ranged from 12.660 mmHg among Mexican American participants to 18.284 mmHg among non-Hispanic Black participants. Other Race participants also had relatively high prediction error, with an RMSE of 17.638 mmHg. The corresponding R2 values ranged from 0.167 among non-Hispanic Black participants to 0.301 among Other Hispanic participants.
+
+For DBP, RMSE ranged from 9.193 mmHg among non-Hispanic White participants to 11.377 mmHg among Other Race participants. Non-Hispanic Asian participants had an RMSE of 10.930 mmHg, while non-Hispanic Black participants had an RMSE of 10.575 mmHg. The R2 values ranged from 0.129 among Other Race participants to 0.230 among non-Hispanic Asian participants.
+
+These findings indicate that prediction error was not uniform across racial and ethnic subgroups. However, subgroup sample sizes differed substantially, ranging from 47 to 576 participants for SBP and 51 to 553 for DBP. Estimates for smaller groups should therefore be interpreted cautiously.
+
+**BP-lowering medication status**
+
+Medication status was associated with notable differences in prediction accuracy for both outcomes. For SBP, participants classified as not diagnosed had the lowest RMSE (13.225 mmHg), compared with 17.882 mmHg among participants not taking BP-lowering medication and 18.881 mmHg among those taking medication. MAE followed the same pattern, at 10.237, 12.620, and 14.726 mmHg, respectively. The R2 was particularly low among participants taking medication (0.043).
+
+For DBP, participants classified as not diagnosed again had the lowest RMSE (8.475 mmHg), whereas participants not taking medication had an RMSE of 10.343 mmHg, and those taking medication had an RMSE of 11.682 mmHg. MAE ranged from 6.749 mmHg among those classified as not diagnosed to 9.339 mmHg among those taking medication. The R2 values were 0.145, 0.205, and 0.151, respectively.
+
+Taken together, the results indicate that prediction errors were larger among participants taking BP-lowering medication than among those classified as not diagnosed, for both SBP and DBP. However, the R2 values did not follow exactly the same pattern as RMSE, illustrating the difference between absolute prediction error and the proportion of within-group variability explained by the model.
+
+**Diabetes status**
+
+For SBP, the RMSE was 14.911 mmHg among participants without diabetes, 17.425 mmHg among participants with diabetes, and 15.962 mmHg among those with borderline diabetes. The corresponding R2 values were 0.232, 0.087, and 0.044.
+
+For DBP, the RMSE was 9.412 mmHg among participants without diabetes and 11.117 mmHg among those with diabetes. Participants with borderline diabetes had an RMSE of 8.898 mmHg. The R2 values were 0.166, 0.168, and 0.331, respectively.
+
+Participants with diabetes therefore had higher absolute prediction errors than participants without diabetes for both outcomes. The apparently higher R2 among participants with borderline diabetes in the DBP model should be interpreted cautiously because that subgroup included only 30 participants. As with the other subgroups, R2 depends on the variability of the outcome within each group and does not directly measure the size of prediction errors.
+
+**Mean prediction error**
+
+Mean prediction error, defined as observed minus predicted BP, was generally small relative to the RMSE for both outcomes. Positive values indicate underprediction, whereas negative values indicate overprediction.
+
+For SBP, subgroup mean errors ranged from −2.127 mmHg among Mexican American participants to +1.628 mmHg among non-Hispanic Asian participants. Mean error was −0.328 mmHg among participants taking BP-lowering medication and +0.095 mmHg among participants with diabetes.
+
+For DBP, mean errors were also relatively small in most subgroups. The largest absolute subgroup mean errors were observed among participants not taking BP-lowering medication (−1.748 mmHg), Other Race participants (−1.629 mmHg), and Other Hispanic participants (−1.477 mmHg). These values suggest that average bias was relatively modest overall, even though individual-level errors—as reflected by RMSE and MAE—remained substantial.
+
+#### 3.4.4 Diagnostic assessment of both predictive models
+
+The diagnostic plots showed several common features in the SBP and DBP models (see Figures 5 and 6). For both outcomes, residuals were generally centered around zero across much of the fitted-value range. However, the residual-versus-fitted and scale-location plots suggested that residual variance was not entirely constant. In particular, the scale-location plots showed increasing residual spread toward higher fitted values, suggesting less consistent prediction errors in this region.
+
+```{r}
+
+SBP_Model$Diagnostic_plots +
+   plot_annotation(
+      title = "Figure 5: Diagnostic plots for final SBP predictive model"
+   )
+```
+
+```{r}
+
+DBP_Model$Diagnostic_plots +
+   plot_annotation(
+      title = "Figure 6: Diagnostic plots for final DBP predictive model"
+   )
+```
+
+The normal Q-Q plots showed reasonable alignment with the reference line near the center of the residual distribution, with noticeable deviations in the tails. The residual distributions were broadly uni-modal but showed some asymmetry and tail departures from normality.
+
+Observed-versus-predicted plots suggested that the models tended to compress predicted values toward the middle of the observed distributions, refer to Figures 7 and 8. Consequently, the models had difficulty predicting individuals with unusually high or low BP values. This pattern was consistent with regression toward the mean.
+
+```{r}
+
+SBP_Model$Prediction_plot +
+   labs(
+      title = "Figure 7: Observed versus predicted final SBP model"
+   )
+```
+
+```{r}
+
+DBP_Model$Prediction_plot +
+   labs(
+      title = "Figure 8: Observed versus predicted final DBP model"
+   )
+```
+
+Examination of residual plots against continuous predictors suggested generally limited systematic residual patterns across the central ranges of most predictors. For SBP, see Figure 9, residual smooths were largely flat across age and log-transformed ACR, while some curvature or directional trends were apparent at higher values of BMI, waist circumference, HbA1c, and pulse rate. For DBP, a curved pattern was most apparent across age, with additional potential residual structure across BMI, log-transformed eGFR, and HbA1c (Figure 10). These patterns were less certain at the extremes of the predictor distributions, where observations were sparse, and confidence bands widened.
+
+```{r}
+
+SBP_Model$Residual_plots +
+      plot_annotation(
+         title = " Figure 9: Prediction error across continuous variables in SBP final prediction model"
+         ) +
+   plot_layout(
+      axes = "collect_y",
+      axis_titles = "collect_y"
+   ) 
+```
+
+```{r}
+
+DBP_Model$Residual_plots +
+      plot_annotation(
+         title = " Figure 10: Prediction error across continuous variables in DBP final prediction model"
+         ) +
+   plot_layout(
+      axes = "collect_y",
+      axis_titles = "collect_y"
+   ) 
+```
+
+Taken together, the diagnostics suggest that both models captured broad relationships in the data but left some systematic variation unexplained.
+
+## 4.0 Discussion
+
+### 4.1 Adjusted associations with blood pressure
+
+The observed racial and ethnic differences in BP were broadly consistent with previous US population-based research [13-15]. In unadjusted comparisons, non-Hispanic Black adults had higher BP than several other racial and ethnic groups, whereas in adjusted final models, they had higher adjusted SBP and DBP than non-Hispanic White adults. These differences should not be interpreted as direct biological effects of race or ethnicity, but considered in the context of socioeconomic conditions, health-related behaviors, healthcare access, environmental exposures, comorbidities, and structural factors [16-18]. Female sex was associated with lower SBP and DBP after adjustment, although the cross-sectional design does not establish the mechanisms underlying these differences. The socioeconomic associations were less consistent across the sequential models: associations involving IPR and marital status were attenuated after additional clinical covariates were included, while education and insurance coverage were not significantly associated with either outcome across the models. These results indicate that the estimated associations were sensitive to model specification; they do not demonstrate that clinical characteristics mediated socioeconomic associations or that socioeconomic circumstances are unimportant to cardiovascular health [19, 20]. Age was positively associated with SBP in both the basic and fully adjusted model, whereas no statistically significant adjusted association was observed with DBP. This pattern is broadly consistent with evidence that SBP tends to increase with age, whereas DBP may plateau or decline in later adulthood, partly in association with increasing arterial stiffness [21]. Nevertheless, because NHANES provides cross-sectional data, these findings describe differences between individuals of different ages rather than within-person changes over time.
+
+The association of adiposity differed by BP component. In the extended model, WC was not significantly associated with SBP, whereas BMI was associated with DBP. This component-specific pattern should be interpreted in the context of evidence linking both general and central adiposity to hypertension risk [22]. However, this evidence is not directly equivalent to the present results, since this study looks at adjusted associations with continuous values of SBP and DBP rather than the incidence of hypertension. BMI and WC were strongly correlated in this analysis, and alternative model specifications indicated that the choice of adiposity measure influenced the model estimates and multicollinearity. These findings highlight the need to evaluate BMI and WC as alternative, correlated measures of adiposity rather than assuming that their individual coefficients reflect distinct effects [22].
+
+Renal characteristics also showed outcome-specific patterns. Higher log-transformed ACR was associated with higher SBP, consistent with evidence linking albuminuria to elevated BP and vascular abnormalities [23, 24]. Whereas log-transformed eGFR was insignificantly associated with DBP, however, this finding does not establish the absence of an association, which may depend on the distribution of kidney function, model specification, and adjustment for correlated characteristics. ACR and eGFR provide complementary information about kidney health and should not be considered interchangeable measures [25, 26].
+
+The alternative model specifications that used categorical diabetes status differed from those that used continuous HbA1c in their multicollinearity diagnostics and other model characteristics. Continuous HbA1c and categorical diabetes status reflect different aspects of glycemic health and may yield different associations with BP [27]. In the extended models, however, HbA1c was not significantly associated with either SBP or DBP after adjustment for the other measured covariates. This does not prove that glycemic status has no relationship with BP; instead, the models provided insufficient evidence of an adjusted association.
+
+In the extended model, pulse rate was not found to be significantly associated with SBP but it was positively associated with DBP. This pattern differs partly from the findings of the WHO-CARDIAC study, which reported positive associations of resting heart rate with both BP components [28]. Additionally, there are studies have linked higher resting heart rate to the development of hypertension [29]; however, that evidence is not directly equivalent to a cross-sectional association with continuous BP components. Differences in study populations, covariate adjustment, and analytical design may contribute to the variation in findings. Furthermore, the difference in statistical significance between SBP and DBP does not, by itself, establish that their associations with pulse rate differ significantly.
+
+Current antihypertensive medication use was not included in the primary adjusted models because treatment status may reflect prior hypertension and related clinical factors. Consequently, the primary estimates describe associations with measured BP without conditioning on current medication use. Unadjusted comparisons involving medication use should not be interpreted as estimates of treatment effectiveness because of potential confounding by indication.
+
+### 4.2 Prediction performance
+
+The predictive models showed modest performance. The SBP model achieved a cross-validation RMSE of 15.52 mmHg and R² of 0.223, compared with 9.93 mmHg and 0.156 for DBP, respectively. The held-out test-set results were broadly consistent with the cross-validation findings, although the models explained only a limited proportion of individual-level variation. The higher R² for SBP indicates that the model explained a greater proportion of its observed variance than the DBP model, despite the higher absolute prediction error for SBP [30, 31]. This difference highlights the importance of interpreting RMSE and R² together because they represent different aspects of predictive performance [32].
+
+Ridge, Lasso, and Elastic Net regressions provided slight improvements over ordinary linear regression, reducing RMSE by approximately 0.009 mmHg for SBP and 0.003 mmHg for DBP. Although regularization can reduce overfitting and address correlated predictors, its benefits depend on the data and model structure [31, 33]. In this analysis, changing the penalty structure alone did not materially improve predictive performance. The prediction coefficients should also not be interpreted as independent population-level associations or causal effects because correlated predictors may share predictive information and penalization can shrink or eliminate coefficients [34].
+
+Prediction errors varied across subgroups. Non-Hispanic Black participants had the highest SBP RMSE, whereas participants in the Other Race category had the highest DBP RMSE. Participants taking BP-lowering medication and those with diabetes had higher RMSE for both SBP and DBP than their respective comparison groups. These findings identify subgroups warranting further evaluation but do not, by themselves, establish systematic model bias. Differences in subgroup sample size and outcome variability may affect the reliability and interpretation of performance metrics [30, 35].
+
+Residual diagnostics also suggested that the linear models did not fully capture every relationship between the predictors and the outcome. Curvature was apparent for selected metabolic and anthropometric predictors. The observed-versus-predicted plots further suggested underprediction at higher BP values and overprediction at lower values, indicating reduced accuracy toward the extremes of the observed distribution [36, 37]. These patterns provide potential directions for model refinement. Future analyses could evaluate restricted cubic splines and a limited number of clinically justified interactions within the validation process. However, departures from residual normality alone are less informative about predictive performance than out-of-sample errors and systematic prediction patterns.
+
+## 5.0 Conclusion
+
+This study identified adjusted associations between selected demographic, anthropometric, metabolic, and renal characteristics and systolic and diastolic blood pressure among US adults using NHANES 2021–2023 data. The observed associations differed between SBP and DBP, underscoring the value of evaluating the two outcomes separately. Predictive performance was modest, with test-set R² values of 0.212 for SBP and 0.177 for DBP. Regularization provided negligible improvement over ordinary linear regression, indicating that it did not substantially improve prediction with the selected predictors and model specifications. Although the models captured some variation in BP, their predictive accuracy was limited at the individual level. In general, the findings distinguish the identification of population-level associations from the prediction of individual blood pressure values. The cross-sectional design also means that the observed associations should not be interpreted as causal effects.
+
+## 6.0 Strengths, limitations, and future directions
+
+A key strength of this study was the complementary use of survey-weighted regression and predictive modeling to address distinct research objectives. The survey-weighted analyses accounted for the complex NHANES sampling design when estimating adjusted associations, while the predictive analyses compared multiple regression approaches using repeated cross-validation and a held-out test set. Subgroup performance assessments and residual diagnostics provided additional insight into the limitations of prediction beyond overall performance metrics. Together, these approaches offered a broader assessment of the relationships between routinely available characteristics and BP, while distinguishing population-level associations from individual-level predictive performance.
+
+Several limitations should be considered. The cross-sectional design precluded establishing temporality and limits causal interpretation; residual confounding and reverse causation remain possible. The limited survey design degrees of freedom necessitated the collapsing of race/ethnicity and education categories, reducing the detail with which these characteristics could be represented. Antihypertensive medication use was not included in the primary regression models; consequently, the estimated associations reflect measured BP without adjustment for current treatment status, which may influence observed BP levels and associations with other characteristics. Predictive performance was modest, and subgroup performance estimates may have been affected by differences in subgroup size. Although cross-validation and a held-out test set provided internal evaluation, external validation in independent data was not performed, and the models’ generalizability to other populations remains uncertain. Therefore, the predictive results do not establish generalizability to independent populations or readiness for clinical implementation.
+
+Overall, the study demonstrates that characteristics associated with BP at the population level do not necessarily provide accurate individual-level predictions. The selected predictors captured some variation in SBP and DBP, but substantial individual-level variation remained unexplained. Further improvements may require accounting for nonlinear relationships like using restricted cubic splines and investigating a limited number of interactions. The findings should therefore be viewed as a characterization of adjusted associations and internally evaluated predictive performance, rather than evidence of causal effects or established clinical utility.
+
+## Table of abbreviation
+
+| Abbreviation | Description                                      |
+|:-------------|:-------------------------------------------------|
+| ACR          | Albumin-to-creatinine ratio                      |
+| BP           | Blood pressure                                   |
+| BMI          | Body mass index                                  |
+| R2           | Coefficient of determination                     |
+| CI           | Confidence interval                              |
+| DBP          | Diastolic blood pressure                         |
+| eGFR         | Estimated glomerular filtration rate             |
+| HbA1c        | Glycohemoglobin level                            |
+| IPR          | Income-to-Poverty Ratio                          |
+| MAE          | Mean absolute error                              |
+| MEC          | Mobile Examination Center                        |
+| NHANES       | National Health and Nutrition Examination Survey |
+| RMSE         | Root mean squared error                          |
+| SCr          | Serum creatinine                                 |
+| SBP          | Systolic blood pressure                          |
+| VIF          | Variance inflation factor                        |
+| WC           | Waist circumference                              |
+
+## References
+
+1.  Fuchs, F.D. and P.K. Whelton, High Blood Pressure and Cardiovascular Disease. Hypertension, 2020. 75(2): p. 285-292.
+
+2.  Fryar, C.D., et al., Hypertension Prevalence, Awareness, Treatment, and Control Among Adults Age 18 and Older: United States, August 2021-August 2023. National Health and Nutrition Examination Survey, 2024(511).
+
+3.  G, S., To Explain or to Predict? Statistical Science, 2010. 25(3): p. 289-310.
+
+4.  Hoerl, A.E. and R.W. Kennard, Ridge Regression: Biased Estimation for Nonorthogonal Problems. Technometrics, 1970. 12(1): p. 55-67.
+
+5.  Statistics, N.C.f.H. Brief Overview of Sample Design, Nonresponse Bias Assessment, and Analytic Guidelines for NHANES August 2021-August 2023. 2024 19 Oct 2026]; Available from: <https://wwwn.cdc.gov/nchs/nhanes/continuousnhanes/OverviewBrief.aspx?Cycle=2021-2023>.
+
+6.  Statistics, N.C.f.H. About NHANES. 2024 [cited 2026 25 July]; Available from: <https://www.cdc.gov/nchs/nhanes/about/index.html>.
+
+7.  Statistics, N.C.f.H., Ethics Review Board Approval. 2026, Centers for Disease Control and Prevention: Hyattsville, MD.
+
+8.  Statistics, N.C.f.H., Blood Pressure Oscillometric Measurement Procedures Manual. 2021, Centers for Disease Control and Prevention: Hyattsville, MD.
+
+9.  Statistics, N.C.f.H. Demographic Variables and Sample Weights (DEMO_L). 2024 29 July 2026]; Available from: <https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2021/DataFiles/DEMO_L.htm#INDFMPIR>.
+
+10. Inker, L.A., et al., New Creatinine- and Cystatin C-Based Equations to Estimate GFR without Race. N Engl J Med, 2021. 385(19): p. 1737-1749.
+
+11. Statistics, N.C.f.H. Blood Pressure & Cholesterol (BPQ_L). 2024 29 July 2026]; Available from: <https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2021/DataFiles/BPQ_L.htm>.
+
+12. Team, R.C. R: A language and environment for statistical computing. Available from: <https://www.r-project.org/>.
+
+13. Hardy, S.T., et al., Racial and Ethnic Differences in Blood Pressure Among US Adults, 1999-2018. Hypertension, 2021. 78(6): p. 1730-1741.
+
+14. Abdalla, M., et al., Implementation Strategies to Improve Blood Pressure Control in the United States: A Scientific Statement From the American Heart Association and American Medical Association. Hypertension, 2023. 80(10): p. e143-e157.
+
+15. Fryar CD, O.Y., Hales CM, Zhang G, Kruszon-Moran D Hypertension prevalence and control among adults: United States, 2015–2016. 2017. 289, 1-8.
+
+16. Carnethon, M.R., et al., Cardiovascular Health in African Americans: A Scientific Statement From the American Heart Association. Circulation, 2017. 136(21): p. e393-e423.
+
+17. Havranek, E.P., et al., Social Determinants of Risk and Outcomes for Cardiovascular Disease. Circulation, 2015. 132(9): p. 873-898.
+
+18. National Academies of Sciences, E. and Medicine, Rethinking Race and Ethnicity in Biomedical Research, ed. M.R. Wilson, S.H. Beachy, and S.N. Schumm. 2025, Washington, DC: The National Academies Press. 270.
+
+19. Leng, B., et al., Socioeconomic status and hypertension: a meta-analysis. J Hypertens, 2015. 33(2): p. 221-9.
+
+20. Metlock, F.E., et al., Impact of Social Determinants of Health on Hypertension Outcomes: A Systematic Review. Hypertension, 2024. 81(8): p. 1675-1700.
+
+21. Franklin, S.S., et al., Hemodynamic Patterns of Age-Related Changes in Blood Pressure. Circulation, 1997. 96(1): p. 308-315.
+
+22. Jayedi, A., et al., Body mass index, abdominal adiposity, weight gain and risk of developing hypertension: a systematic review and dose–response meta-analysis of more than 2.3 million participants. Obesity Reviews, 2018. 19(5): p. 654-667.
+
+23. Claudel, S.E. and A. Verma, Albuminuria in Cardiovascular, Kidney, and Metabolic Disorders: A State-of-the-Art Review. Circulation, 2025. 151(10): p. 716-732.
+
+24. Ren, F., et al., Urine albumin-to-creatinine ratio within the normal range and risk of hypertension in the general population: A meta-analysis. J Clin Hypertens (Greenwich), 2021. 23(7): p. 1284-1290.
+
+25. Association of estimated glomerular filtration rate and albuminuria with all-cause and cardiovascular mortality in general population cohorts: a collaborative meta-analysis. The Lancet, 2010. 375(9731): p. 2073-2081.
+
+26. Kidney Disease: Improving Global Outcomes, C.K.D.W.G., et al., KDIGO 2024 Clinical Practice Guideline for the Evaluation and Management of Chronic Kidney Disease. Kidney International, 2024. 105(4): p. S117-S314.
+
+27. American Diabetes Association Professional Practice, C., 2. Diagnosis and Classification of Diabetes: Standards of Care in Diabetes—2025. Diabetes Care, 2024. 48(Supplement_1): p. S27-S49.
+
+28. Liu, L., et al., Resting heart rate in relation to blood pressure: Results from the World Health Organization - Cardiovascular Disease and Alimentary Comparison Study. International Journal of Cardiology, 2010. 145(1): p. 73-74.
+
+29. Shen, L., et al., Dose-response association of resting heart rate and hypertension in adults: A systematic review and meta-analysis of cohort studies. Medicine (Baltimore), 2020. 99(10): p. e19401.
+
+30. Collins, G.S., et al., Evaluation of clinical prediction models (part 1): from development to external validation. BMJ, 2024. 384: p. e074819.
+
+31. Riley, R.D. and G.S. Collins, Stability of clinical prediction models developed using statistical or machine learning methods. Biometrical Journal, 2023. 65(8): p. 2200302.
+
+32. Hodson, T.O., Root-mean-square error (RMSE) or mean absolute error (MAE): when to use them or not. Geosci. Model Dev., 2022. 15(14): p. 5481-5487.
+
+33. Steyerberg, E.W., Clinical prediction models: a practical approach to development, validation, and updating. 2019: Springer.
+
+34. Pavlou, M., et al., Review and evaluation of penalised regression methods for risk prediction in low-dimensional data with few events. Statistics in Medicine, 2016. 35(7): p. 1159-1177.
+
+35. Riley, R.D., et al., Evaluation of clinical prediction models (part 2): how to undertake an external validation study. BMJ, 2024. 384: p. e074820.
+
+36. Efthimiou, O., et al., Developing clinical prediction models: a step-by-step guide. BMJ, 2024. 386: p. e078276.
+
+37. Archer, L., et al., Minimum sample size for external validation of a clinical prediction model with a continuous outcome. Statistics in Medicine, 2021. 40(1): p. 133-146.
