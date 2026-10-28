@@ -1,10 +1,3 @@
----
-title: "Untitled"
-author: "Osama Banat"
-date: "2026-10-28"
-output: html_document
----
-
 # Demographic, Lifestyle, Metabolic, and Renal Factors Associated with Blood Pressure in U.S. Adults: A Survey-Weighted Analysis and Predictive Modeling Study
 
 > **Background:** Blood pressure is an important modifiable determinant of cardiovascular risk, with substantial variation across demographic and clinical characteristics. This study examined the adjusted associations of demographic, socioeconomic, anthropometric, metabolic, and renal characteristics with systolic and diastolic blood pressure, while evaluating the ability of these characteristics to predict individual blood pressure values.
